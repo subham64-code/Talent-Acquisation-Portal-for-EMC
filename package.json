@@ -1,0 +1,29 @@
+{
+  "name": "emc-talent-acquisition-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered Talent Acquisition Portal, CV Databank and Employee Management System for Ecometrics Consultant Pvt. Ltd. (EMC)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace frontend run dev",
+    "build": "npm --workspace backend run build && npm --workspace frontend run build",
+    "typecheck": "npm --workspace backend run typecheck && npm --workspace frontend run typecheck",
+    "test": "npm --workspace backend run test",
+    "db:generate": "npm --workspace backend run db:generate",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:push": "npm --workspace backend run db:push",
+    "db:seed": "npm --workspace backend run db:seed",
+    "db:dev": "npm --workspace backend run db:dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

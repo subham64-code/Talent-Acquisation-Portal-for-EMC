@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Storage / uploads
+backend/storage/uploads/
+backend/storage/temp/
+storage/
+data/
+pgdata/
+.pgdata/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Prisma local
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Google credentials
+*service-account*.json
+google-credentials.json
