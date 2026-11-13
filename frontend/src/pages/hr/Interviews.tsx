@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 
 const RESULT_OPTIONS = [
@@ -21,6 +22,8 @@ export default function Interviews() {
   const [showNextRound, setShowNextRound] = useState(false);
   const [nextRoundName, setNextRoundName] = useState("");
   const [nextDate, setNextDate] = useState("");
+  const [selectedForOffer, setSelectedForOffer] = useState<any>(null);
+  const navigate = useNavigate();
 
   const load = () => {
     hrApi.interviews({ page: 1, pageSize: 100 }).then((r: any) => setItems(r.data.items ?? r.data)).catch(() => setItems([]));
@@ -63,6 +66,9 @@ export default function Interviews() {
         nextRound: key === "NEXT_ROUND" ? (nextRoundName.trim() || "Next Round") : undefined,
         nextScheduledAt: key === "NEXT_ROUND" && nextDate ? new Date(nextDate).toISOString() : undefined,
       });
+      if (key === "SELECTED") {
+        setSelectedForOffer(resultFor);
+      }
       setResultFor(null);
       setShowNextRound(false);
       setNextRoundName("");
@@ -161,7 +167,7 @@ export default function Interviews() {
                     <td className="ink-soft text-xs">{String(i.result || "PENDING").replace(/_/g, " ")}</td>
                     <td>
                       <div className="flex flex-wrap gap-1">
-                        {i.status !== "CANCELLED" && (
+                        {i.status !== "CANCELLED" && (!i.result || i.result === "PENDING") && (
                           <button className="btn-xs btn-primary whitespace-nowrap" onClick={() => { setResultFor(i); setError(""); }}>
                             Record result
                           </button>
@@ -181,6 +187,31 @@ export default function Interviews() {
           </div>
         )}
       </div>
+
+      {/* Forward to offer modal */}
+      {selectedForOffer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="card w-full max-w-md p-6 shadow-2xl text-center">
+            <div className="w-16 h-16 mx-auto rounded-full bg-[#198754]/15 flex items-center justify-center mb-4">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#198754" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <h3 className="text-lg font-extrabold ink-body">Candidate Selected</h3>
+            <p className="text-sm ink-soft mt-1.5">
+              <span className="font-semibold ink-body">{selectedForOffer.application?.candidate?.fullName}</span> for{" "}
+              <span className="font-semibold ink-body">{selectedForOffer.application?.jobOpening?.title}</span> has been moved to SELECTED and is ready for an offer letter.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 mt-6">
+              <button className="btn-ghost sm:flex-1" onClick={() => setSelectedForOffer(null)}>Later</button>
+              <button
+                className="btn-primary sm:flex-1"
+                onClick={() => navigate(`/hr/offers?applicationId=${selectedForOffer.application?.id ?? ""}`)}
+              >
+                Create Offer Letter →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Result modal */}
       {resultFor && (

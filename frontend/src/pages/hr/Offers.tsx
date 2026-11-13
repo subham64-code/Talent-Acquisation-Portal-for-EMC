@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 import DataTable, { type Column } from "../../components/DataTable";
 
@@ -23,9 +24,19 @@ export default function Offers() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
+  const [searchParams] = useSearchParams();
+
   const load = () => {
     hrApi.offers({ page: 1, pageSize: 100 }).then((r: any) => setItems(r.data.items ?? r.data)).catch(() => setItems([]));
   };
+
+  useEffect(() => {
+    const appId = searchParams.get("applicationId");
+    if (appId) {
+      setForm((p) => ({ ...p, applicationId: appId }));
+      setShowCreate(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     Promise.all([
@@ -124,7 +135,7 @@ export default function Offers() {
                   ))}
                 </select>
                 {applications.length === 0 && (
-                  <p className="text-[11px] text-[#F28C28]">No selected candidates yet. Mark applications as SELECTED from View Submissions — they will appear here immediately.</p>
+                  <p className="text-[11px] text-[#F28C28]">No selected candidates yet. Mark applications as SELECTED from View Submissions or from Interview Scheduling — they will appear here immediately.</p>
                 )}
               </div>
               <div className="flex flex-col gap-1.5">

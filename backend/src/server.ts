@@ -85,7 +85,7 @@ app.listen(env.port, () => {
   }
 
   // Warm the connection pool immediately so the very first request is fast…
-  prisma.$queryRaw`SELECT 1`.catch((err) => console.error("[db] warm-up failed:", err?.message));
+  prisma.$queryRaw`SELECT 1`.catch((err) => console.error("[db] warm-up failed:", String(err?.message ?? err).split("\n")[0]));
   // …and keep it warm. Neon suspends idle compute after ~5 minutes; a light
   // ping every 4 minutes prevents costly cold starts for the next request.
   const keepAlive = setInterval(() => {

@@ -6,6 +6,7 @@ import { ApiError } from "../utils/ApiError";
 import { ok, created, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
 import { authenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
+import { authRateLimiter } from "../middleware/rateLimit";
 import { logAudit } from "../services/audit.service";
 import { cache } from "../services/cache.service";
 import { notifyHrTeam, notifyCandidate } from "../services/notification.service";
@@ -17,6 +18,78 @@ import PDFDocument from "pdfkit";
 import { signPurposeToken, verifyPurposeToken } from "../utils/jwt";
 
 const router = express.Router();
+
+const respondSchema = z.object({
+  token: z.string().min(1),
+  decision: z.enum(["ACCEPTED", "DECLINED"]),
+  remarks: z.string().optional().nullable(),
+});
+
+router.post(
+  "/respond",
+  authRateLimiter,
+  asyncHandler(async (req, res) => {
+    const parsed = respondSchema.safeParse(req.body);
+    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
+    const { token, decision, remarks } = parsed.data;
+    const decoded = verifyPurposeToken(token, "OFFER_RESPONSE") as unknown as { offerId: string; candidateId: string };
+    const offer = await prisma.offerLetter.findUnique({ where: { id: decoded.offerId }, include: { application: { include: { candidate: true, jobOpening: true } } } });
+    if (!offer) throw ApiError.notFound("Offer not found.");
+    if (offer.application.candidateId !== decoded.candidateId) throw ApiError.forbidden("This offer response link is not valid for your account.");
+    if (offer.status === OFFER_STATUS.EXPIRED || offer.status === OFFER_STATUS.WITHDRAWN) throw ApiError.badRequest("This offer is no longer active.");
+    const now = new Date();
+    if (offer.expiryDate && offer.expiryDate.getTime() < now.getTime()) {
+      await prisma.offerLetter.update({ where: { id: offer.id }, data: { status: OFFER_STATUS.EXPIRED } });
+      throw ApiError.badRequest("This offer has expired.");
+    }
+    const target = decision === "ACCEPTED" ? OFFER_STATUS.ACCEPTED : OFFER_STATUS.DECLINED;
+    await prisma.offerLetter.update({ where: { id: offer.id }, data: { status: target, respondedAt: now, responseRemarks: remarks } });
+    if (decision === "ACCEPTED") {
+      await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.OFFER_ACCEPTED } });
+      await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.OFFER_ACCEPTED, changedById: null, remarks: "Candidate accepted offer" } });
+      // Initialize required documents
+      const categories = await prisma.documentCategory.findMany({ where: { isActive: true } });
+      for (const cat of categories) {
+        await prisma.candidateDocument.upsert({
+          where: { applicationId_categoryId: { applicationId: offer.applicationId, categoryId: cat.id } },
+          update: {},
+          create: { candidateId: offer.application.candidateId, applicationId: offer.applicationId, categoryId: cat.id, status: "NOT_UPLOADED" },
+        });
+      }
+      const createdDocs = await prisma.documentCategory.count({ where: { isActive: true } });
+      await notifyHrTeam({ type: "offer.accepted", title: "Offer accepted", body: `${offer.application.candidate.fullName} accepted the offer for ${offer.designation}.`, entityType: "OfferLetter", entityId: offer.id });
+
+      const uploadToken = signPurposeToken({ applicationId: offer.applicationId, candidateId: offer.application.candidateId }, "DOC_UPLOAD", "7d");
+      const uploadLink = `${env.appUrl}/onboard/documents?token=${uploadToken}`;
+      void sendTemplateEmail({
+        to: offer.application.candidate.email,
+        templateKey: "document_upload_request",
+        data: {
+          name: offer.application.candidate.fullName,
+          jobTitle: offer.application.jobOpening.title,
+          applicationCode: offer.application.applicationCode,
+          documentCount: createdDocs,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          link: uploadLink,
+        },
+        metadata: { applicationId: offer.applicationId, offerId: offer.id },
+      });
+      await cache.offersChanged();
+    } else {
+      await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.REJECTED, hrRemarks: remarks } });
+      await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.REJECTED, changedById: null, remarks: "Candidate declined offer" } });
+    }
+    await logAudit(req, { action: "OFFER_RESPOND", entityType: "OfferLetter", entityId: offer.id, actorId: decoded.candidateId, actorEmail: offer.application.candidate.email, metadata: { decision } });
+    const responsePayload: Record<string, unknown> = { message: `Offer ${decision.toLowerCase()}.`, decision };
+    if (decision === "ACCEPTED") {
+      responsePayload.uploadToken = signPurposeToken({ applicationId: offer.applicationId, candidateId: offer.application.candidateId }, "DOC_UPLOAD", "7d");
+      responsePayload.uploadLink = `${env.appUrl}/onboard/documents?token=${responsePayload.uploadToken}`;
+    }
+    return ok(res, responsePayload);
+  }),
+);
+
+
 router.use(authenticate, requireAuth("HR"), requireHr);
 
 const offerSchema = z.object({
@@ -204,73 +277,6 @@ router.post(
   }),
 );
 
-const respondSchema = z.object({
-  token: z.string().min(1),
-  decision: z.enum(["ACCEPTED", "DECLINED"]),
-  remarks: z.string().optional().nullable(),
-});
-
-router.post(
-  "/respond",
-  asyncHandler(async (req, res) => {
-    const parsed = respondSchema.safeParse(req.body);
-    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
-    const { token, decision, remarks } = parsed.data;
-    const decoded = verifyPurposeToken(token, "OFFER_RESPONSE") as unknown as { offerId: string; candidateId: string };
-    const offer = await prisma.offerLetter.findUnique({ where: { id: decoded.offerId }, include: { application: { include: { candidate: true, jobOpening: true } } } });
-    if (!offer) throw ApiError.notFound("Offer not found.");
-    if (offer.application.candidateId !== decoded.candidateId) throw ApiError.forbidden("This offer response link is not valid for your account.");
-    if (offer.status === OFFER_STATUS.EXPIRED || offer.status === OFFER_STATUS.WITHDRAWN) throw ApiError.badRequest("This offer is no longer active.");
-    const now = new Date();
-    if (offer.expiryDate && offer.expiryDate.getTime() < now.getTime()) {
-      await prisma.offerLetter.update({ where: { id: offer.id }, data: { status: OFFER_STATUS.EXPIRED } });
-      throw ApiError.badRequest("This offer has expired.");
-    }
-    const target = decision === "ACCEPTED" ? OFFER_STATUS.ACCEPTED : OFFER_STATUS.DECLINED;
-    await prisma.offerLetter.update({ where: { id: offer.id }, data: { status: target, respondedAt: now, responseRemarks: remarks } });
-    if (decision === "ACCEPTED") {
-      await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.OFFER_ACCEPTED } });
-      await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.OFFER_ACCEPTED, changedById: null, remarks: "Candidate accepted offer" } });
-      // Initialize required documents
-      const categories = await prisma.documentCategory.findMany({ where: { isActive: true } });
-      for (const cat of categories) {
-        await prisma.candidateDocument.upsert({
-          where: { applicationId_categoryId: { applicationId: offer.applicationId, categoryId: cat.id } },
-          update: {},
-          create: { candidateId: offer.application.candidateId, applicationId: offer.applicationId, categoryId: cat.id, status: "NOT_UPLOADED" },
-        });
-      }
-      const createdDocs = await prisma.documentCategory.count({ where: { isActive: true } });
-      await notifyHrTeam({ type: "offer.accepted", title: "Offer accepted", body: `${offer.application.candidate.fullName} accepted the offer for ${offer.designation}.`, entityType: "OfferLetter", entityId: offer.id });
-
-      const uploadToken = signPurposeToken({ applicationId: offer.applicationId, candidateId: offer.application.candidateId }, "DOC_UPLOAD", "7d");
-      const uploadLink = `${env.appUrl}/onboard/documents?token=${uploadToken}`;
-      void sendTemplateEmail({
-        to: offer.application.candidate.email,
-        templateKey: "document_upload_request",
-        data: {
-          name: offer.application.candidate.fullName,
-          jobTitle: offer.application.jobOpening.title,
-          applicationCode: offer.application.applicationCode,
-          documentCount: createdDocs,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          link: uploadLink,
-        },
-        metadata: { applicationId: offer.applicationId, offerId: offer.id },
-      });
-      await cache.offersChanged();
-    } else {
-      await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.REJECTED, hrRemarks: remarks } });
-      await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.REJECTED, changedById: null, remarks: "Candidate declined offer" } });
-    }
-    await logAudit(req, { action: "OFFER_RESPOND", entityType: "OfferLetter", entityId: offer.id, actorId: decoded.candidateId, actorEmail: offer.application.candidate.email, metadata: { decision } });
-    const responsePayload: Record<string, unknown> = { message: `Offer ${decision.toLowerCase()}.`, decision };
-    if (decision === "ACCEPTED") {
-      responsePayload.uploadToken = signPurposeToken({ applicationId: offer.applicationId, candidateId: offer.application.candidateId }, "DOC_UPLOAD", "7d");
-      responsePayload.uploadLink = `${env.appUrl}/onboard/documents?token=${responsePayload.uploadToken}`;
-    }
-    return ok(res, responsePayload);
-  }),
-);
 
 export default router;
+

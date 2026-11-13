@@ -28,7 +28,7 @@ export default function Home() {
   };
 
   return (
-    <div ref={topRef} className="min-h-screen surface-app ink-body flex flex-col">
+    <div ref={topRef} className="min-h-screen surface-app public-light ink-body flex flex-col">
       {/* WELCOME ANNOUNCEMENT — floating marquee */}
       <div className="announcement-bar bg-gradient-to-r from-[#0F3D2E] via-[#146C43] to-[#0F3D2E] text-white text-[11px] sm:text-xs font-semibold tracking-wide py-1.5 border-b border-white/10 overflow-hidden select-none" role="status" aria-live="polite">
         <div className="announcement-track">
@@ -48,22 +48,22 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link to="/career" className="flex items-center gap-2 shrink-0">
-              <Logo size={32} />
-              <span className="font-bold text-lg sm:text-xl text-white tracking-tight">
+              <Logo size={28} />
+              <span className="hidden min-[400px]:inline font-bold text-base sm:text-xl text-white tracking-tight">
                 EMC<span className="text-[#F28C28]">.</span> Talent
               </span>
             </Link>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
               <Link
                 to="/careers/apply"
-                className="px-5 sm:px-6 py-2.5 rounded-lg bg-[#F28C28] text-white text-sm font-extrabold tracking-wide hover:bg-orange-600 transition-colors whitespace-nowrap shadow-[0_4px_14px_rgba(242,140,40,.4)]"
+                className="px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-[#F28C28] text-white text-xs sm:text-sm font-extrabold tracking-wide hover:bg-orange-600 transition-colors whitespace-nowrap shadow-[0_4px_14px_rgba(242,140,40,.4)]"
               >
                 APPLY NOW
               </Link>
               <Link
                 to="/auth/hr/login"
-                className="px-4 py-2.5 rounded-lg border border-white/25 text-white text-sm font-semibold hover:bg-white/10 transition-colors whitespace-nowrap"
+                className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg border border-white/25 text-white text-xs sm:text-sm font-semibold hover:bg-white/10 transition-colors whitespace-nowrap"
               >
                 HR Login
               </Link>
@@ -110,8 +110,8 @@ export default function Home() {
                 { label: "Years of Excellence", value: "15+" },
                 { label: "Projects Delivered", value: "400+" },
               ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-white/10 bg-white/5 p-5">
-                  <p className="text-3xl font-extrabold text-[#8BC34A]">{s.value}</p>
+                <div key={s.label} className="rounded-xl border border-white/10 bg-white/5 p-4 sm:p-5">
+                  <p className="text-2xl sm:text-3xl font-extrabold text-[#8BC34A]">{s.value}</p>
                   <p className="text-xs uppercase tracking-wider text-[#C9D1CC] mt-1">{s.label}</p>
                 </div>
               ))}

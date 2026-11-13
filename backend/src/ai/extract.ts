@@ -2,6 +2,7 @@ import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import Tesseract from "tesseract.js";
 import { env } from "../config/env";
+import { ocrPdfBuffer } from "./pdfOcr";
 
 export interface ParsedCV {
   skills: string[];
@@ -26,8 +27,8 @@ export async function extractText(buffer: Buffer, mime: string, filename: string
       let text = result.text || "";
       if (text.trim().length < 40 && env.ocrEnabled) {
         try {
-          const ocr = await Tesseract.recognize(buffer, env.ocrLanguages);
-          if (ocr.data.text && ocr.data.text.trim().length > text.trim().length) text = ocr.data.text;
+          const ocr = await ocrPdfBuffer(buffer);
+          if (ocr.trim().length > text.trim().length) text = ocr;
         } catch {}
       }
       return text;
@@ -40,7 +41,7 @@ export async function extractText(buffer: Buffer, mime: string, filename: string
     if (mime.startsWith("image/") || /\.(jpe?g|png|webp)$/i.test(lower)) {
       if (env.ocrEnabled) {
         try {
-          const ocr = await Tesseract.recognize(buffer, env.ocrLanguages);
+          const ocr = await Tesseract.recognize(buffer, env.ocrLanguages, { errorHandler: () => {} });
           return ocr.data.text || "";
         } catch { return ""; }
       }
@@ -50,7 +51,8 @@ export async function extractText(buffer: Buffer, mime: string, filename: string
   } catch {
     if (env.ocrEnabled && (mime.startsWith("image/") || mime === "application/pdf")) {
       try {
-        const ocr = await Tesseract.recognize(buffer, env.ocrLanguages);
+        if (mime === "application/pdf") return (await ocrPdfBuffer(buffer)) || "";
+        const ocr = await Tesseract.recognize(buffer, env.ocrLanguages, { errorHandler: () => {} });
         return ocr.data.text || "";
       } catch { return ""; }
     }

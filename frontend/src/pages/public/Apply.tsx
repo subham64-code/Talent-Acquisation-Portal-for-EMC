@@ -233,7 +233,7 @@ export default function Apply() {
   ], [form, qualifications, selectedJob]);
 
   return (
-    <div className="min-h-screen surface-app">
+    <div className="min-h-screen surface-app public-light">
       {/* Public header */}
       <nav className="surface-ink border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -249,17 +249,17 @@ export default function Apply() {
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Progress stepper */}
-        <ol className="flex items-center justify-center gap-2 sm:gap-6 mb-8">
+        <ol className="flex items-center justify-center gap-1.5 sm:gap-6 mb-8">
           {progressSteps.map((label, i) => {
             const done = i < currentStep;
             const active = i === currentStep;
             return (
-              <li key={label} className="flex items-center gap-2 sm:gap-3">
-                <span className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold border transition-colors ${done ? "bg-[#198754] border-[#198754] text-white" : active ? "border-[#F28C28] text-[#F28C28] bg-[#F28C28]/10" : "border-[#171717]/15 text-[#171717]/40"}`}>
+              <li key={label} className="flex items-center gap-1.5 sm:gap-3">
+                <span className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] sm:text-sm font-bold border transition-colors ${done ? "bg-[#198754] border-[#198754] text-white" : active ? "border-[#F28C28] text-[#F28C28] bg-[#F28C28]/10" : "border-[#171717]/15 text-[#171717]/40"}`}>
                   {done ? "✓" : i + 1}
                 </span>
-                <span className={`text-xs sm:text-sm font-semibold ${active ? "ink-body" : "ink-soft"}`}>{label}</span>
-                {i < progressSteps.length - 1 && <span className="w-6 sm:w-14 h-px bg-[#171717]/15 hidden xs:block" />}
+                <span className={`text-[10px] min-[400px]:text-xs sm:text-sm font-semibold whitespace-nowrap ${active ? "ink-body" : "ink-soft"}`}>{label}</span>
+                {i < progressSteps.length - 1 && <span className="w-4 sm:w-14 h-px bg-[#171717]/15 hidden sm:block" />}
               </li>
             );
           })}

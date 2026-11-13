@@ -23,6 +23,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1166.0",
     "@aws-sdk/s3-request-presigner": "^3.1167.0",
+    "@napi-rs/canvas": "^1.1.1",
     "@prisma/client": "^6.16.2",
     "compression": "^1.8.0",
     "cookie-parser": "^1.4.7",
@@ -39,6 +40,7 @@
     "multer": "^2.0.2",
     "nodemailer": "^6.10.0",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^3.11.174",
     "pdfkit": "^0.15.2",
     "swagger-ui-express": "^5.0.1",
     "tesseract.js": "^5.1.1",

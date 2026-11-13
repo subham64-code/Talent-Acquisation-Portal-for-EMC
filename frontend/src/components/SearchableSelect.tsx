@@ -62,7 +62,7 @@ export default function SearchableSelect({ id, value, onChange, options, placeho
         aria-expanded={open}
       />
       {open && !disabled && filtered.length > 0 && (
-        <ul className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-[#171717]/10 bg-white shadow-lg py-1 text-sm">
+        <ul className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-[var(--border-strong)] bg-[var(--card)] shadow-lg py-1 text-sm ink-body">
           {filtered.map((o) => (
             <li key={o}>
               <button

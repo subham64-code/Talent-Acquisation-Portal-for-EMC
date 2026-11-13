@@ -66,9 +66,9 @@ export default function OnboardDocuments() {
   const allRequiredUploaded = required.length > 0 && required.every((d) => d.status !== "NOT_UPLOADED" && d.status !== "REUPLOAD_REQUIRED");
   const progress = docs.length ? Math.round((docs.filter((d) => d.status !== "NOT_UPLOADED").length / docs.length) * 100) : 0;
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center surface-app ink-soft">Opening your secure document portal…</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center surface-app public-light ink-soft">Opening your secure document portal…</div>;
   if (error && !data) return (
-    <div className="min-h-screen surface-app flex items-center justify-center p-6">
+    <div className="min-h-screen surface-app public-light flex items-center justify-center p-6">
       <div className="card p-8 max-w-md text-center">
         <p className="text-4xl mb-4">🔒</p>
         <h1 className="text-lg font-bold ink-body mb-2">Link not valid</h1>
@@ -79,7 +79,7 @@ export default function OnboardDocuments() {
   );
 
   return (
-    <div className="min-h-screen surface-app">
+    <div className="min-h-screen surface-app public-light">
       <nav className="surface-ink border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-2">
           <Logo size={30} />

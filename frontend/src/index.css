@@ -46,6 +46,29 @@
     color-scheme: dark;
   }
 
+  /* Public careers site always renders the light theme, even if the
+     viewing device prefers dark or has a stored dark theme choice. */
+  .public-light {
+    --app-bg: #F5F7F6;
+    --card: #FFFFFF;
+    --card-soft: #FAFBFA;
+    --ink: #171717;
+    --ink-soft: #3B3B3B;
+    --muted: #5C5C5C;
+    --border: rgba(23, 23, 23, 0.12);
+    --border-strong: rgba(23, 23, 23, 0.2);
+    --green: #198754;
+    --green-mid: #146C43;
+    --green-light: #EAF7F0;
+    --orange: #F28C28;
+    --orange-mid: #D97417;
+    --orange-light: #FFF3E3;
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.08);
+    color-scheme: light;
+  }
+  html:has(.public-light) { color-scheme: light; }
+  html:has(.public-light), html:has(.public-light) body { background: #F5F7F6; }
+
   html {
     scroll-behavior: smooth;
   }
@@ -104,7 +127,7 @@
 
   /* ---------- Form controls ---------- */
   .input, .select, .textarea {
-    @apply block w-full rounded-xl border px-3.5 py-2.5 text-sm transition-all duration-200 outline-none;
+    @apply block w-full rounded-xl border px-3.5 py-2.5 text-base sm:text-sm transition-all duration-200 outline-none;
     background: var(--card);
     color: var(--ink);
     border-color: var(--border-strong);

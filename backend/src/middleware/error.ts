@@ -3,7 +3,12 @@ import { ApiError } from "../utils/ApiError";
 import { env } from "../config/env";
 
 export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
-  console.error(`[${new Date().toISOString()}] ${err.message}`, env.isProd ? "" : err.stack);
+  const status = err instanceof ApiError ? err.statusCode : 500;
+  if (status >= 500) {
+    console.error(`[${new Date().toISOString()}] ${err.message}`, env.isProd ? "" : err.stack);
+  } else {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${status} ${err.message}`);
+  }
 
   // Malformed request bodies (express.json / urlencoded failures) are client errors.
   const errAny = err as any;

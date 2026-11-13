@@ -35,7 +35,7 @@ export default function Jobs() {
   const applyFor = (job: any) => navigate(`/careers/apply?job=${job.id}`);
 
   return (
-    <div className="min-h-screen surface-app flex flex-col">
+    <div className="min-h-screen surface-app public-light flex flex-col">
       <nav className="surface-ink sticky top-0 z-40 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link to="/career" className="flex items-center gap-2">

@@ -20,10 +20,10 @@ export default function JobDetail() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center surface-app ink-soft">Loading…</div>
+    <div className="min-h-screen flex items-center justify-center surface-app public-light ink-soft">Loading…</div>
   );
   if (!opening) return (
-    <div className="min-h-screen flex items-center justify-center surface-app">
+    <div className="min-h-screen flex items-center justify-center surface-app public-light">
       <div className="card p-8 text-center">
         <p className="ink-soft mb-4">This opening is no longer available.</p>
         <Link to="/careers/jobs" className="btn-primary">Browse all jobs</Link>
@@ -34,7 +34,7 @@ export default function JobDetail() {
   const applied = searchParams.get("applied") === "1";
 
   return (
-    <div className="min-h-screen surface-app flex flex-col">
+    <div className="min-h-screen surface-app public-light flex flex-col">
       <nav className="surface-ink sticky top-0 z-40 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link to="/careers/jobs" className="flex items-center gap-2">
