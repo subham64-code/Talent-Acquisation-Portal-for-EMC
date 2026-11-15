@@ -39,8 +39,8 @@ export default function Jobs() {
       <nav className="surface-ink sticky top-0 z-40 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link to="/career" className="flex items-center gap-2">
-            <Logo size={30} />
-            <span className="font-bold text-lg text-white">EMC<span className="text-[#F28C28]">.</span> Careers</span>
+            <Logo size={30}  onDark />
+            <span className="font-bold text-lg text-white">EMC<span className="text-[#FF9412]">.</span> Careers</span>
           </Link>
           <div className="flex items-center gap-2">
             <Link to="/career" className="hidden sm:inline-flex px-3 py-2 rounded-lg text-sm font-medium text-white/80 hover:bg-white/10 transition-colors">
@@ -48,7 +48,7 @@ export default function Jobs() {
             </Link>
             <Link
               to="/careers/apply"
-              className="px-4 py-2 rounded-lg bg-[#F28C28] text-white text-sm font-semibold hover:bg-orange-600 transition-colors whitespace-nowrap"
+              className="px-4 py-2 rounded-lg bg-[#FF9412] text-white text-sm font-semibold hover:bg-orange-600 transition-colors whitespace-nowrap"
             >
               Apply Now
             </Link>

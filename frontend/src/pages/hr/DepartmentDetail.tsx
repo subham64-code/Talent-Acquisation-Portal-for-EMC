@@ -8,10 +8,10 @@ import { hrApi } from "../../lib/api";
 const STAGES = [
   { key: "APPLIED", label: "Applied", color: "#171717" },
   { key: "UNDER_REVIEW", label: "Under Review", color: "#5C5C5C" },
-  { key: "SHORTLISTED", label: "Shortlisted", color: "#198754" },
+  { key: "SHORTLISTED", label: "Shortlisted", color: "#659616" },
   { key: "INTERVIEW_SCHEDULED", label: "Interview", color: "#8BC34A" },
-  { key: "SELECTED", label: "Selected", color: "#F28C28" },
-  { key: "HIRED", label: "Hired", color: "#D97417" },
+  { key: "SELECTED", label: "Selected", color: "#FF9412" },
+  { key: "HIRED", label: "Hired", color: "#E5810A" },
   { key: "REJECTED", label: "Rejected", color: "#E4E7E5" },
   { key: "ON_HOLD", label: "On Hold", color: "#A3A3A3" },
 ];
@@ -41,11 +41,11 @@ export default function DepartmentDetail() {
   });
   const typeData = Object.entries(byType).map(([name, value]) => ({ name, value }));
   const empChart = [
-    { name: "Total", value: employees.length, fill: "#198754" },
-    { name: "Openings", value: detail.activeOpenings ?? 0, fill: "#F28C28" },
+    { name: "Total", value: employees.length, fill: "#659616" },
+    { name: "Openings", value: detail.activeOpenings ?? 0, fill: "#FF9412" },
     { name: "Applicants", value: detail.totalApplicants ?? 0, fill: "#171717" },
     { name: "Shortlisted", value: detail.shortlisted ?? 0, fill: "#8BC34A" },
-    { name: "Selected", value: detail.selected ?? 0, fill: "#D97417" },
+    { name: "Selected", value: detail.selected ?? 0, fill: "#E5810A" },
   ];
   const stageData = STAGES.map((s) => ({ name: s.label, value: apps.filter((a: any) => a.status === s.key).length, fill: s.color }));
 
@@ -53,7 +53,7 @@ export default function DepartmentDetail() {
     <div className="min-h-screen surface-app p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
         <div>
-          <Link to="/hr/dashboard" className="text-xs font-semibold text-[#198754] hover:underline">← Dashboard</Link>
+          <Link to="/hr/dashboard" className="text-xs font-semibold text-[#659616] hover:underline">← Dashboard</Link>
           <h1 className="text-2xl font-extrabold ink-body mt-1">{dept.name}</h1>
           <p className="text-xs ink-soft">{dept.code} · {dept.description}</p>
         </div>
@@ -63,10 +63,10 @@ export default function DepartmentDetail() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
         {[
           { label: "Employees", value: employees.length, color: "ink-body" },
-          { label: "Active Openings", value: detail.activeOpenings ?? 0, color: "text-[#F28C28]" },
+          { label: "Active Openings", value: detail.activeOpenings ?? 0, color: "text-[#FF9412]" },
           { label: "Applicants", value: detail.totalApplicants ?? 0, color: "ink-body" },
-          { label: "Shortlisted", value: detail.shortlisted ?? 0, color: "text-[#198754]" },
-          { label: "Selected", value: detail.selected ?? 0, color: "text-[#D97417]" },
+          { label: "Shortlisted", value: detail.shortlisted ?? 0, color: "text-[#659616]" },
+          { label: "Selected", value: detail.selected ?? 0, color: "text-[#E5810A]" },
         ].map((k) => (
           <div key={k.label} className="card p-4">
             <p className="text-xs ink-soft">{k.label}</p>
@@ -84,7 +84,7 @@ export default function DepartmentDetail() {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E9ECEA" />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#5C5C5C" }} axisLine={false} tickLine={false} interval={0} angle={-18} textAnchor="end" height={54} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "#5C5C5C" }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: "#19875408" }} contentStyle={{ borderRadius: 10, border: "1px solid #E9ECEA", fontSize: 12 }} />
+                <Tooltip cursor={{ fill: "#65961608" }} contentStyle={{ borderRadius: 10, border: "1px solid #E9ECEA", fontSize: 12 }} />
                 <Bar dataKey="value" name="Candidates" radius={[6, 6, 0, 0]}>
                   {stageData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                 </Bar>
@@ -133,7 +133,7 @@ export default function DepartmentDetail() {
                   <td className="ink-soft">{i + 1}</td>
                   <td className="font-medium ink-body">{a.candidate?.fullName}</td>
                   <td className="ink-soft">{a.jobOpening?.title}</td>
-                  <td><span className="badge border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80">{String(a.status).replace(/_/g, " ")}</span></td>
+                  <td><span className="badge border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80">{String(a.status).replace(/_/g, " ")}</span></td>
                   <td className="ink-soft text-xs">{new Date(a.appliedAt).toLocaleDateString()}</td>
                 </tr>
               ))}

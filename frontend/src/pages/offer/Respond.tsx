@@ -33,7 +33,7 @@ export default function OfferRespond() {
   if (step === "success") return (
     <div className="min-h-screen flex items-center center surface-app">
       <div className="card p-8 mx-auto text-center max-w-md">
-        <div className="w-10 h-10 rounded-full bg-[#198754] flex items-center justify-center text-white mx-auto mb-4 font-bold">✓</div>
+        <div className="w-10 h-10 rounded-full bg-[#659616] flex items-center justify-center text-white mx-auto mb-4 font-bold">✓</div>
         <h2 className="text-xl font-bold ink-body mb-2">Response Recorded</h2>
         <p className="ink-soft mb-6">Your offer response ({decision}) has been recorded.</p>
         {decision === "ACCEPTED" && uploadLink ? (
@@ -60,8 +60,8 @@ export default function OfferRespond() {
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium ink-soft">Decision</label>
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" className={`btn px-4 py-2 rounded-lg border text-sm font-medium ${decision === "ACCEPTED" ? "bg-[#198754] text-white border-[#198754]" : "surface-card ink-body line-border hover:bg-[#198754]/10"}`} onClick={() => setDecision("ACCEPTED")}>Accept</button>
-                <button type="button" className={`btn px-4 py-2 rounded-lg border text-sm font-medium ${decision === "DECLINED" ? "bg-[#D97417] text-white border-[#D97417]" : "surface-card ink-body line-border hover:bg-orange-50"}`} onClick={() => setDecision("DECLINED")}>Decline</button>
+                <button type="button" className={`btn px-4 py-2 rounded-lg border text-sm font-medium ${decision === "ACCEPTED" ? "bg-[#659616] text-white border-[#659616]" : "surface-card ink-body line-border hover:bg-[#659616]/10"}`} onClick={() => setDecision("ACCEPTED")}>Accept</button>
+                <button type="button" className={`btn px-4 py-2 rounded-lg border text-sm font-medium ${decision === "DECLINED" ? "bg-[#E5810A] text-white border-[#E5810A]" : "surface-card ink-body line-border hover:bg-orange-50"}`} onClick={() => setDecision("DECLINED")}>Decline</button>
               </div>
               <input type="hidden" name="decision" value={decision || ""} />
             </div>

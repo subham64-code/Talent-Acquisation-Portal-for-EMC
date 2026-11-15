@@ -30,14 +30,14 @@ export default function Home() {
   return (
     <div ref={topRef} className="min-h-screen surface-app public-light ink-body flex flex-col">
       {/* WELCOME ANNOUNCEMENT — floating marquee */}
-      <div className="announcement-bar bg-gradient-to-r from-[#0F3D2E] via-[#146C43] to-[#0F3D2E] text-white text-[11px] sm:text-xs font-semibold tracking-wide py-1.5 border-b border-white/10 overflow-hidden select-none" role="status" aria-live="polite">
+      <div className="announcement-bar bg-gradient-to-r from-[#38570A] via-[#4C730D] to-[#38570A] text-white text-[11px] sm:text-xs font-semibold tracking-wide py-1.5 border-b border-white/10 overflow-hidden select-none" role="status" aria-live="polite">
         <div className="announcement-track">
           {[0, 1].map((n) => (
             <span key={n} className="pr-16">
-              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#F28C28]">•</span>&nbsp;&nbsp;
-              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#F28C28]">•</span>&nbsp;&nbsp;
-              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#F28C28]">•</span>&nbsp;&nbsp;
-              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#F28C28]">•</span>&nbsp;&nbsp;
+              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
+              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
+              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
+              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
             </span>
           ))}
         </div>
@@ -48,16 +48,16 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link to="/career" className="flex items-center gap-2 shrink-0">
-              <Logo size={28} />
+              <Logo size={28}  onDark />
               <span className="hidden min-[400px]:inline font-bold text-base sm:text-xl text-white tracking-tight">
-                EMC<span className="text-[#F28C28]">.</span> Talent
+                EMC<span className="text-[#FF9412]">.</span> Talent
               </span>
             </Link>
 
             <div className="flex items-center gap-1.5 sm:gap-2">
               <Link
                 to="/careers/apply"
-                className="px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-[#F28C28] text-white text-xs sm:text-sm font-extrabold tracking-wide hover:bg-orange-600 transition-colors whitespace-nowrap shadow-[0_4px_14px_rgba(242,140,40,.4)]"
+                className="px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-[#FF9412] text-white text-xs sm:text-sm font-extrabold tracking-wide hover:bg-orange-600 transition-colors whitespace-nowrap shadow-[0_4px_14px_rgba(255,148,18,.4)]"
               >
                 APPLY NOW
               </Link>
@@ -77,8 +77,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div>
-              <span className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#F28C28] mb-4">
-                <span className="w-6 h-[3px] bg-[#F28C28] inline-block" /> Talent Acquisition
+              <span className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#FF9412] mb-4">
+                <span className="w-6 h-[3px] bg-[#FF9412] inline-block" /> Talent Acquisition
               </span>
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight mb-5">
                 Careers at <span className="text-[#8BC34A]">EMC</span>
@@ -90,13 +90,13 @@ export default function Home() {
               <div className="flex flex-wrap gap-3">
                 <button
                   onClick={() => scrollTo("positions")}
-                  className="px-6 py-3 rounded-lg bg-[#F28C28] text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
+                  className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
                 >
                   Open Positions
                 </button>
                 <button
                   onClick={() => navigate("/careers/apply")}
-                  className="px-6 py-3 rounded-lg bg-[#198754] text-white font-semibold text-sm hover:bg-[#146c43] transition-colors"
+                  className="px-6 py-3 rounded-lg bg-[#659616] text-white font-semibold text-sm hover:bg-[#4C730D] transition-colors"
                 >
                   Apply Now
                 </button>
@@ -132,7 +132,7 @@ export default function Home() {
             </div>
             <button
               onClick={() => navigate("/careers/jobs")}
-              className="px-5 py-2.5 rounded-lg border border-[#198754]/40 text-[#198754] font-semibold text-sm hover:bg-[#198754]/10 transition-colors self-start"
+              className="px-5 py-2.5 rounded-lg border border-[#659616]/40 text-[#659616] font-semibold text-sm hover:bg-[#659616]/10 transition-colors self-start"
             >
               View all jobs →
             </button>
@@ -151,7 +151,7 @@ export default function Home() {
                 <div key={o.id} className="card p-5 flex flex-col">
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <h3 className="font-bold ink-body leading-snug">{o.title}</h3>
-                    <span className="shrink-0 badge border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80">
+                    <span className="shrink-0 badge border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80">
                       {o.positions} open
                     </span>
                   </div>
@@ -160,7 +160,7 @@ export default function Home() {
                   </p>
                   <div className="flex flex-wrap gap-1.5 mb-4">
                     {(o.requiredSkills || []).slice(0, 3).map((s: string) => (
-                      <span key={s} className="text-[10px] px-2 py-0.5 rounded bg-[#F28C28]/10 text-[#F28C28] font-semibold">{s}</span>
+                      <span key={s} className="text-[10px] px-2 py-0.5 rounded bg-[#FF9412]/10 text-[#FF9412] font-semibold">{s}</span>
                     ))}
                   </div>
                   <div className="mt-auto flex gap-2">
@@ -184,8 +184,8 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-center">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Logo size={34} />
-              <span className="text-xl font-bold text-white">EMC<span className="text-[#F28C28]">.</span></span>
+              <Logo size={34}  onDark />
+              <span className="text-xl font-bold text-white">EMC<span className="text-[#FF9412]">.</span></span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold mb-4">About EMC</h2>
             <p className="text-[#C9D1CC] leading-relaxed mb-5">
@@ -199,7 +199,7 @@ export default function Home() {
               and document verification — so every decision is traceable and every record is secure.
             </p>
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => scrollTo("positions")} className="px-6 py-3 rounded-lg bg-[#F28C28] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
+              <button onClick={() => scrollTo("positions")} className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
                 Explore Careers
               </button>
               <button onClick={() => scrollTo("contact")} className="px-6 py-3 rounded-lg border border-white/25 text-white font-semibold text-sm hover:bg-white/10 transition-colors">
@@ -230,7 +230,7 @@ export default function Home() {
           <p className="ink-soft text-sm mb-8">Specialist teams working across every project discipline.</p>
           <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {departments.map((d: any) => (
-              <div key={d.id} className="rounded-lg border border-[#171717]/10 surface-card px-4 py-3 text-sm font-medium ink-body hover:border-[#198754]/50 transition-colors">
+              <div key={d.id} className="rounded-lg border border-[#171717]/10 surface-card px-4 py-3 text-sm font-medium ink-body hover:border-[#659616]/50 transition-colors">
                 {d.name}
               </div>
             ))}
@@ -244,7 +244,7 @@ export default function Home() {
       </section>
 
       {/* CONTACT */}
-      <section id="contact" className="py-14 sm:py-20 bg-[#198754] text-white">
+      <section id="contact" className="py-14 sm:py-20 bg-[#659616] text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-bold mb-8">Contact EMC</h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -261,7 +261,7 @@ export default function Home() {
             ))}
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/careers/apply" className="px-6 py-3 rounded-lg bg-[#F28C28] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
+            <Link to="/careers/apply" className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
               Apply for a Job
             </Link>
           </div>
@@ -272,8 +272,8 @@ export default function Home() {
       <footer className="surface-ink text-[#C9D1CC] py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm">
           <div className="flex items-center gap-2">
-            <Logo size={26} />
-            <span className="font-bold text-white">EMC<span className="text-[#F28C28]">.</span> Talent Acquisition Portal</span>
+            <Logo size={26}  onDark />
+            <span className="font-bold text-white">EMC<span className="text-[#FF9412]">.</span> Talent Acquisition Portal</span>
           </div>
           <div className="flex flex-wrap gap-5">
             <Link to="/career" className="hover:text-white">Careers</Link>

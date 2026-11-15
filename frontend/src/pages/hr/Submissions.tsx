@@ -1,15 +1,16 @@
-﻿import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
 import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
 import DataTable, { type Column } from "../../components/DataTable";
 
 const STATUS_TONE: Record<string, string> = {
-  SHORTLISTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  SELECTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  HIRED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  SHORTLISTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  SELECTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  HIRED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   INTERVIEW_SCHEDULED: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
-  ON_HOLD: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  ON_HOLD: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
   REJECTED: "border-red-200 bg-red-50 text-red-700",
   APPLIED: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
   UNDER_REVIEW: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
@@ -31,13 +32,21 @@ function Badge({ status }: { status: string }) {
 }
 
 export default function Submissions() {
-  const [search, setSearch] = useState("");
-  const [jobOpeningId, setJobOpeningId] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get("search") || "");
+  const [jobOpeningId, setJobOpeningId] = useState(() => searchParams.get("jobOpeningId") || "");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const debouncedSearch = useDebounced(search);
   const invalidate = useInvalidate();
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (debouncedSearch) next.set("search", debouncedSearch);
+    if (jobOpeningId) next.set("jobOpeningId", jobOpeningId);
+    setSearchParams(next, { replace: true });
+  }, [debouncedSearch, jobOpeningId, setSearchParams]);
 
   const params = useMemo(
     () => ({ page: 1, pageSize: 100, search: debouncedSearch || undefined, jobOpeningId: jobOpeningId || undefined, status: status || undefined }),
@@ -86,7 +95,7 @@ export default function Submissions() {
     {
       key: "score", header: "AI Score", hideOnMobile: true,
       render: (a) => a.aiMatchScore != null
-        ? <span className="font-semibold text-[#198754]">{Math.round(a.aiMatchScore)}</span>
+        ? <span className="font-semibold text-[#659616]">{Math.round(a.aiMatchScore)}</span>
         : <span className="ink-soft">—</span>,
     },
     { key: "status", header: "Status", render: (a) => <Badge status={a.status} /> },
@@ -115,7 +124,7 @@ export default function Submissions() {
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-[#198754]/10 border border-[#198754]/25 px-4 py-2.5 text-sm text-[#198754] flex items-start justify-between gap-3">
+        <div className="mb-4 rounded-lg bg-[#659616]/10 border border-[#659616]/25 px-4 py-2.5 text-sm text-[#659616] flex items-start justify-between gap-3">
           <span>{message}</span>
           <button onClick={() => setMessage("")} className="font-bold">×</button>
         </div>

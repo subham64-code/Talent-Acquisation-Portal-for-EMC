@@ -88,7 +88,7 @@ export default function EmployeeUpdate() {
   if (step === "success") return (
     <div className="min-h-screen flex items-center center surface-app">
       <div className="card p-8 mx-auto text-center max-w-md">
-        <div className="w-10 h-10 rounded-full bg-[#198754] flex items-center justify-center text-white mx-auto mb-4 font-bold">✓</div>
+        <div className="w-10 h-10 rounded-full bg-[#659616] flex items-center justify-center text-white mx-auto mb-4 font-bold">✓</div>
         <h2 className="text-xl font-bold ink-body mb-2">{error ? "Error" : "Information Submitted"}</h2>
         <p className="ink-soft mb-6">{error || (employee ? `Thank you, ${employee.fullName}. Your employee information has been submitted successfully.` : "")}</p>
         {!error && <button className="btn-primary" onClick={() => navigate("/")}>Return to Careers</button>}
@@ -130,7 +130,7 @@ export default function EmployeeUpdate() {
               ))}
               <div className="flex flex-col gap-1">
                 <label className="text-sm font-medium ink-soft">Upload Latest CV</label>
-                <input type="file" accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png" onChange={handleFile} className="block w-full text-sm ink-soft file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#198754]/50 file:text-[#198754] hover:file:bg-[#198754]/100" />
+                <input type="file" accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png" onChange={handleFile} className="block w-full text-sm ink-soft file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#659616]/50 file:text-[#659616] hover:file:bg-[#659616]/100" />
               </div>
             </div>
             <p className="text-xs ink-soft mt-2">Your latest CV will be stored securely in your employee record.</p>

@@ -1,11 +1,11 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 
 const RESULT_OPTIONS = [
-  { key: "SELECTED", label: "Selected", tone: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80", icon: "✓" },
+  { key: "SELECTED", label: "Selected", tone: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80", icon: "✓" },
   { key: "NEXT_ROUND", label: "Next Round", tone: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]", icon: "→" },
-  { key: "UNDER_REVIEW", label: "Under Review", tone: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80", icon: "⟳" },
+  { key: "UNDER_REVIEW", label: "Under Review", tone: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80", icon: "⟳" },
   { key: "REJECTED", label: "Rejected", tone: "border-red-200 bg-red-50 text-red-700", icon: "✕" },
   { key: "ON_HOLD", label: "On Hold", tone: "border-[#171717]/15 bg-[#171717]/5 ink-soft", icon: "⏸" },
 ];
@@ -192,8 +192,8 @@ export default function Interviews() {
       {selectedForOffer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="card w-full max-w-md p-6 shadow-2xl text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-[#198754]/15 flex items-center justify-center mb-4">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#198754" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            <div className="w-16 h-16 mx-auto rounded-full bg-[#659616]/15 flex items-center justify-center mb-4">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#659616" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
             </div>
             <h3 className="text-lg font-extrabold ink-body">Candidate Selected</h3>
             <p className="text-sm ink-soft mt-1.5">

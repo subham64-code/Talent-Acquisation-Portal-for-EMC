@@ -4,44 +4,59 @@
 
 /* ------------------------------------------------------------------
    EMC Talent Acquisition Portal — design system
-   Palette: green #198754 · orange #F28C28 · white · black #171717
+   Palette: lime #7AB41B · orange #FF9412 · white · ink #171717
+   (aligned with the Ecometrix HR portal visual language)
 ------------------------------------------------------------------ */
 
 @layer base {
   :root {
-    --app-bg: #F5F7F6;
+    --app-bg: #F5F7F2;
     --card: #FFFFFF;
-    --card-soft: #FAFBFA;
+    --card-soft: #F8FAF5;
     --ink: #171717;
-    --ink-soft: #3B3B3B;
-    --muted: #5C5C5C;
-    --border: rgba(23, 23, 23, 0.12);
-    --border-strong: rgba(23, 23, 23, 0.2);
-    --green: #198754;
-    --green-mid: #146C43;
-    --green-light: #EAF7F0;
-    --orange: #F28C28;
-    --orange-mid: #D97417;
-    --orange-light: #FFF3E3;
-    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.08);
+    --ink-soft: #2A2A2A;
+    --muted: #74796F;
+    --border: #E6EBDD;
+    --border-strong: #D4DBC9;
+    --green: #7AB41B;
+    --green-mid: #659616;
+    --green-dark: #4C730D;
+    --green-deep: #38570A;
+    --green-light: #EEF5E5;
+    --green-softer: #F7FAF2;
+    --green-tint: #E3F0CF;
+    --green-line: #D5E5C0;
+    --orange: #FF9412;
+    --orange-mid: #E5810A;
+    --orange-deep: #B96706;
+    --orange-light: #FFF2E2;
+    --orange-tint: #FFE5C4;
+    --shadow-card: 0 1px 2px rgba(23, 23, 23, 0.04), 0 8px 22px rgba(23, 23, 23, 0.06);
     color-scheme: light;
   }
 
   .dark {
-    --app-bg: #0F1412;
-    --card: #18201D;
-    --card-soft: #1E2723;
-    --ink: #E8EDE9;
-    --ink-soft: #C2CBC6;
-    --muted: #9AA39D;
+    --app-bg: #12160E;
+    --card: #1B2115;
+    --card-soft: #202719;
+    --ink: #EDEFE6;
+    --ink-soft: #C9CDBC;
+    --muted: #9BA187;
     --border: rgba(255, 255, 255, 0.09);
     --border-strong: rgba(255, 255, 255, 0.18);
-    --green: #34B577;
-    --green-mid: #198754;
-    --green-light: #16281F;
-    --orange: #F5A623;
-    --orange-mid: #F28C28;
-    --orange-light: #241C10;
+    --green: #8CCB2E;
+    --green-mid: #7AB41B;
+    --green-dark: #A9D95A;
+    --green-deep: #C2E88A;
+    --green-light: #232E18;
+    --green-softer: #1E2614;
+    --green-tint: #2C3A1C;
+    --green-line: #3A4A24;
+    --orange: #FFB03A;
+    --orange-mid: #FF9412;
+    --orange-deep: #FFC46E;
+    --orange-light: #2A2011;
+    --orange-tint: #332715;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
     color-scheme: dark;
   }
@@ -49,25 +64,32 @@
   /* Public careers site always renders the light theme, even if the
      viewing device prefers dark or has a stored dark theme choice. */
   .public-light {
-    --app-bg: #F5F7F6;
+    --app-bg: #F5F7F2;
     --card: #FFFFFF;
-    --card-soft: #FAFBFA;
+    --card-soft: #F8FAF5;
     --ink: #171717;
-    --ink-soft: #3B3B3B;
-    --muted: #5C5C5C;
-    --border: rgba(23, 23, 23, 0.12);
-    --border-strong: rgba(23, 23, 23, 0.2);
-    --green: #198754;
-    --green-mid: #146C43;
-    --green-light: #EAF7F0;
-    --orange: #F28C28;
-    --orange-mid: #D97417;
-    --orange-light: #FFF3E3;
-    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.08);
+    --ink-soft: #2A2A2A;
+    --muted: #74796F;
+    --border: #E6EBDD;
+    --border-strong: #D4DBC9;
+    --green: #7AB41B;
+    --green-mid: #659616;
+    --green-dark: #4C730D;
+    --green-deep: #38570A;
+    --green-light: #EEF5E5;
+    --green-softer: #F7FAF2;
+    --green-tint: #E3F0CF;
+    --green-line: #D5E5C0;
+    --orange: #FF9412;
+    --orange-mid: #E5810A;
+    --orange-deep: #B96706;
+    --orange-light: #FFF2E2;
+    --orange-tint: #FFE5C4;
+    --shadow-card: 0 1px 2px rgba(23, 23, 23, 0.04), 0 8px 22px rgba(23, 23, 23, 0.06);
     color-scheme: light;
   }
   html:has(.public-light) { color-scheme: light; }
-  html:has(.public-light), html:has(.public-light) body { background: #F5F7F6; }
+  html:has(.public-light), html:has(.public-light) body { background: #F5F7F2; }
 
   html {
     scroll-behavior: smooth;
@@ -85,15 +107,17 @@
 @layer components {
   /* ---------- Buttons ---------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-4 py-2.5 text-sm font-semibold transition-all duration-200 select-none
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#198754]/50 disabled:opacity-50 disabled:pointer-events-none
-           active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-[10px] border border-transparent px-4 py-2.5 text-sm font-semibold transition-all duration-150 select-none whitespace-nowrap
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7ab41b]/40 disabled:opacity-50 disabled:pointer-events-none
+           active:translate-y-px;
   }
   .btn-primary {
-    @apply btn text-white shadow-sm;
-    background-image: linear-gradient(135deg, #2BA56D 0%, #198754 55%, #146C43 100%);
+    @apply btn text-white;
+    background: linear-gradient(180deg, #84bd26 0%, #7ab41b 52%, #72aa17 100%);
+    border-color: #6ea514;
+    box-shadow: 0 2px 5px rgba(122, 180, 27, 0.26), 0 10px 20px -10px rgba(122, 180, 27, 0.46);
   }
-  .btn-primary:hover { filter: brightness(1.06); box-shadow: 0 8px 24px rgba(25, 135, 84, 0.35); }
+  .btn-primary:hover { background: linear-gradient(180deg, #79b01d 0%, #6ca512 100%); box-shadow: 0 3px 7px rgba(122, 180, 27, 0.28), 0 14px 24px -12px rgba(122, 180, 27, 0.55); }
 
   .btn-outline {
     @apply btn;
@@ -101,50 +125,55 @@
     border-color: var(--border-strong);
     background: var(--card);
   }
-  .btn-outline:hover { background: var(--green-light); border-color: var(--green); color: var(--green-mid); }
+  .btn-outline:hover { background: var(--green-softer); border-color: var(--green); color: var(--green-dark); }
 
   .btn-ghost {
     @apply btn;
-    color: var(--ink-soft);
+    color: var(--muted);
     background: transparent;
   }
-  .btn-ghost:hover { background: var(--border); color: var(--ink); }
+  .btn-ghost:hover { background: var(--card-soft); color: var(--ink); }
 
   .btn-danger {
     @apply btn text-white;
-    background-image: linear-gradient(135deg, #E0671B 0%, #D97417 55%, #B85A0F 100%);
+    background: linear-gradient(180deg, #d6453b 0%, #c9342b 100%);
+    border-color: #bb3028;
+    box-shadow: 0 2px 6px rgba(201, 52, 43, 0.2);
   }
-  .btn-danger:hover { filter: brightness(1.05); box-shadow: 0 8px 24px rgba(217, 116, 23, 0.35); }
+  .btn-danger:hover { background: #a92720; }
 
   .btn-accent {
     @apply btn text-white shadow-sm;
-    background-image: linear-gradient(135deg, #F5A623 0%, #F28C28 55%, #D97417 100%);
+    background: linear-gradient(180deg, #ffa22c 0%, #ff9412 55%, #f68b08 100%);
+    border-color: #ed8709;
+    box-shadow: 0 2px 5px rgba(255, 148, 18, 0.24), 0 10px 20px -10px rgba(255, 148, 18, 0.42);
   }
-  .btn-accent:hover { filter: brightness(1.06); box-shadow: 0 8px 24px rgba(242, 140, 40, 0.35); }
+  .btn-accent:hover { background: linear-gradient(180deg, #f5971f 0%, #ea8509 100%); }
 
   .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
   .btn-xs { @apply px-2.5 py-1.5 text-xs rounded-lg; }
 
   /* ---------- Form controls ---------- */
   .input, .select, .textarea {
-    @apply block w-full rounded-xl border px-3.5 py-2.5 text-base sm:text-sm transition-all duration-200 outline-none;
+    @apply block w-full rounded-[10px] border px-3.5 py-2.5 text-base sm:text-sm transition-all duration-150 outline-none;
     background: var(--card);
     color: var(--ink);
     border-color: var(--border-strong);
   }
-  .input::placeholder, .textarea::placeholder { color: var(--muted); }
+  .input::placeholder, .textarea::placeholder { color: #94998f; }
+  .input:hover, .select:hover, .textarea:hover { border-color: var(--green); }
   .input:focus, .select:focus, .textarea:focus {
     border-color: var(--green);
-    box-shadow: 0 0 0 4px rgba(25, 135, 84, 0.12);
-    background: var(--card-soft);
+    box-shadow: 0 0 0 4px rgba(122, 180, 27, 0.14);
+    background: var(--card);
   }
 
   /* ---------- Cards & surfaces ---------- */
   .card {
-    border-radius: 1.1rem;
+    border-radius: 14px;
     border: 1px solid var(--border);
     background: var(--card);
-    box-shadow: var(--shadow-card);
+    box-shadow: 0 1px 2px rgba(23, 23, 23, 0.04);
   }
   .card-hover { transition: transform .2s ease, box-shadow .2s ease; }
   .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(16,24,40,.14); }
@@ -158,11 +187,12 @@
   /* ---------- Tables ---------- */
   .table { @apply w-full text-left border-collapse text-[13px]; }
   .table th {
-    @apply px-2.5 py-2 text-[10px] font-bold uppercase tracking-wider;
+    @apply px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider;
     color: var(--muted);
-    background: color-mix(in srgb, var(--card) 92%, var(--app-bg));
-    border-bottom: 2px solid var(--border-strong);
+    background: #F6F9F2;
+    border-bottom: 1px solid var(--border);
   }
+  .dark .table th { background: #1E2614; }
   .table td { @apply px-2.5 py-2 align-middle; border-bottom: 1px solid var(--border); }
   .table tbody tr { transition: background-color .15s ease; }
   .table tbody tr:hover td { background: var(--green-light); }
@@ -171,9 +201,112 @@
   .badge {
     @apply inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap;
   }
-  .badge-green { border-color: rgba(25,135,84,.3); background: var(--green-light); color: var(--green-mid); }
-  .badge-orange { border-color: rgba(242,140,40,.35); background: var(--orange-light); color: var(--orange-mid); }
+  .badge-green { border-color: var(--green-line); background: var(--green-light); color: var(--green-mid); }
+  .badge-orange { border-color: var(--orange-tint); background: var(--orange-light); color: var(--orange-mid); }
   .badge-ink { border-color: var(--border-strong); background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink-soft); }
+
+  /* ---------- Page header eyebrow (Ashis-style) ---------- */
+  .page-eyebrow {
+    @apply inline-flex items-center gap-1.5 text-[0.69rem] font-bold uppercase tracking-[0.1em] rounded-full px-2.5 py-1 mb-2;
+    color: var(--green-mid);
+    background: var(--green-light);
+    border: 1px solid var(--green-line);
+  }
+
+  /* ---------- Stat cards (Ashis-style) ---------- */
+  .stat-card {
+    --stat-accent: var(--green);
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 1.05rem 1.1rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(23, 23, 23, 0.04);
+    overflow: hidden;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: transform 220ms cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 220ms ease, border-color 220ms ease;
+  }
+  .stat-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--stat-accent), transparent 75%);
+  }
+  .stat-card::after {
+    content: "";
+    position: absolute;
+    right: -24px;
+    top: -30px;
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    background: var(--stat-accent);
+    opacity: 0.06;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 2px 10px rgba(23, 23, 23, 0.04), 0 10px 22px -14px rgba(23, 23, 23, 0.18);
+  }
+  .stat-card--orange { --stat-accent: var(--orange); }
+  .stat-card--grey { --stat-accent: #8d9686; }
+  .stat-card__icon {
+    position: relative;
+    z-index: 1;
+    width: 43px;
+    height: 43px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    background: var(--green-light);
+    border: 1px solid var(--green-line);
+    color: var(--green-mid);
+  }
+  .stat-card--orange .stat-card__icon {
+    background: var(--orange-light);
+    border-color: var(--orange-tint);
+    color: var(--orange-mid);
+  }
+  .stat-card--grey .stat-card__icon {
+    background: #f1f4ec;
+    border-color: var(--border);
+    color: #5b6453;
+  }
+  .stat-card__label {
+    position: relative;
+    z-index: 1;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .stat-card__value {
+    position: relative;
+    z-index: 1;
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.18;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-card__meta {
+    position: relative;
+    z-index: 1;
+    font-size: 0.68rem;
+    color: var(--muted);
+    line-height: 1.4;
+  }
 
   /* ---------- Skeletons / loader ---------- */
   .skeleton { @apply rounded-lg h-4; background: color-mix(in srgb, var(--ink) 10%, transparent); }
@@ -198,6 +331,9 @@
 
 @layer utilities {
   /* App-level surface helpers referenced across pages */
+  .app-header-bg {
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+  }
   .surface-app { background: var(--app-bg); color: var(--ink); }
   .surface-card { background: var(--card); color: var(--ink); }
   .surface-ink { background: var(--ink); color: #fff; }
@@ -207,11 +343,11 @@
   .line-border { border-color: var(--border); }
 
   /* Eye-catching brand gradients */
-  .gradient-brand { background-image: linear-gradient(135deg, #198754 0%, #0F3D2E 60%, #171717 100%); }
-  .gradient-hero { background: radial-gradient(900px 480px at 12% -10%, #1E5C40 0%, #171717 55%); }
-  .gradient-orange { background-image: linear-gradient(135deg, #F5A623 0%, #F28C28 60%, #D97417 100%); }
+  .gradient-brand { background-image: linear-gradient(135deg, #7AB41B 0%, #4C730D 60%, #171717 100%); }
+  .gradient-hero { background: radial-gradient(900px 480px at 12% -10%, #5F8A14 0%, #38570A 55%, #1E2614 100%); }
+  .gradient-orange { background-image: linear-gradient(135deg, #FFA22C 0%, #FF9412 60%, #E5810A 100%); }
   .text-gradient {
-    background-image: linear-gradient(120deg, #34B577 0%, #198754 40%, #F28C28 100%);
+    background-image: linear-gradient(120deg, #7AB41B 0%, #659616 40%, #FF9412 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -239,8 +375,8 @@
   to { transform: translateX(0); opacity: 1; }
 }
 @keyframes pulseSoft {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.35); }
-  50% { box-shadow: 0 0 0 8px rgba(25, 135, 84, 0.08); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(122, 180, 27, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(122, 180, 27, 0.1); }
 }
 @keyframes floatY {
   0%, 100% { transform: translateY(0); }

@@ -1,4 +1,4 @@
-﻿import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
 import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
@@ -6,8 +6,8 @@ import DataTable, { type Column } from "../../components/DataTable";
 
 const STATUS_TONE: Record<string, string> = {
   DRAFT: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  PUBLISHED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  CLOSED: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  PUBLISHED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  CLOSED: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
 };
 
 export default function Openings() {
@@ -113,7 +113,7 @@ export default function Openings() {
       </div>
 
       {(error || message) && (
-        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#198754]/10 border-[#198754]/25 text-[#198754]"}`}>
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#659616]/10 border-[#659616]/25 text-[#659616]"}`}>
           {error || message}
         </div>
       )}
@@ -196,7 +196,7 @@ export default function Openings() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-semibold ink-soft">JD file (PDF / DOCX / TXT)</label>
-              <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} className="block w-full text-sm ink-soft file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#198754]/10 file:text-[#198754]" />
+              <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} className="block w-full text-sm ink-soft file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#659616]/10 file:text-[#659616]" />
             </div>
             <button className="btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Opening"}</button>
           </form>

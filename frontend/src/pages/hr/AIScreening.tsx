@@ -1,17 +1,17 @@
-﻿import { useEffect, useState, Fragment } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { hrApi } from "../../lib/api";
 
 const STATUS_TONE: Record<string, string> = {
-  SHORTLISTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  SELECTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  HIRED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
-  ON_HOLD: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  SHORTLISTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  SELECTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  HIRED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
+  ON_HOLD: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
   REJECTED: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
 };
 
 function scoreTone(score: number) {
-  if (score >= 75) return "text-[#198754]";
-  if (score >= 50) return "text-[#F28C28]";
+  if (score >= 75) return "text-[#659616]";
+  if (score >= 50) return "text-[#FF9412]";
   return "ink-soft";
 }
 
@@ -93,10 +93,10 @@ export default function AIScreening() {
         </div>
         {runInfo && (
           <div className="flex gap-3 text-xs">
-            <span className="badge border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80">
+            <span className="badge border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80">
               {runInfo.candidatesEvaluated} evaluated
             </span>
-            <span className="badge border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80">
+            <span className="badge border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80">
               Top score {runInfo.topScore != null ? Math.round(runInfo.topScore) : "—"}
             </span>
           </div>
@@ -136,7 +136,7 @@ export default function AIScreening() {
           <div className="mt-4 pt-4 border-t border-[#171717]/10 flex flex-wrap gap-2 text-xs">
             <span className="ink-soft">Required skills:</span>
             {(job.requiredSkills || []).map((s: string) => (
-              <span key={s} className="px-2 py-0.5 rounded bg-[#F28C28]/10 text-[#F28C28] font-semibold">{s}</span>
+              <span key={s} className="px-2 py-0.5 rounded bg-[#FF9412]/10 text-[#FF9412] font-semibold">{s}</span>
             ))}
             <span className="ml-auto ink-soft">Min {job.minExperience}–{job.maxExperience} yrs</span>
           </div>
@@ -173,7 +173,7 @@ export default function AIScreening() {
                       <td>
                         <div className="font-medium ink-body">{m.candidate?.fullName}</div>
                         <div className="text-xs ink-soft">{m.candidate?.email}</div>
-                        <button className="text-[11px] text-[#198754] font-semibold mt-0.5" onClick={() => setExpanded(expanded === m.id ? null : m.id)}>
+                        <button className="text-[11px] text-[#659616] font-semibold mt-0.5" onClick={() => setExpanded(expanded === m.id ? null : m.id)}>
                           {expanded === m.id ? "Hide details" : "Why this score?"}
                         </button>
                         {expanded === m.id && (
@@ -189,10 +189,10 @@ export default function AIScreening() {
                               <div className="flex justify-between"><span>CV confidence</span><span className="font-bold">{m.extractionConfidence != null ? Math.round(m.extractionConfidence) : "—"}</span></div>
                             </div>
                             {Array.isArray(m.strengths) && m.strengths.length > 0 && (
-                              <p className="text-[#198754]">+ {m.strengths.join(" · ")}</p>
+                              <p className="text-[#659616]">+ {m.strengths.join(" · ")}</p>
                             )}
                             {Array.isArray(m.gaps) && m.gaps.length > 0 && (
-                              <p className="text-[#D97417]">− {m.gaps.join(" · ")}</p>
+                              <p className="text-[#E5810A]">− {m.gaps.join(" · ")}</p>
                             )}
                           </div>
                         )}
@@ -202,12 +202,12 @@ export default function AIScreening() {
                         {m.candidate?.totalExperience ?? "—"} yrs
                         <span className="block text-[11px] ink-soft">rel. {m.candidate?.relevantExperience ?? "—"}</span>
                       </td>
-                      <td className="text-xs text-[#198754] max-w-[180px]">
+                      <td className="text-xs text-[#659616] max-w-[180px]">
                         {Array.isArray(m.matchedSkills) && m.matchedSkills.length
                           ? m.matchedSkills.join(", ")
                           : <span className="ink-soft">none</span>}
                       </td>
-                      <td className="text-xs text-[#D97417] max-w-[150px]">
+                      <td className="text-xs text-[#E5810A] max-w-[150px]">
                         {Array.isArray(m.missingSkills) && m.missingSkills.length
                           ? m.missingSkills.join(", ")
                           : <span className="ink-soft">—</span>}

@@ -118,13 +118,13 @@ export default function AccessControl() {
   return (
     <div className="min-h-screen surface-app p-4 sm:p-6 lg:p-8">
       <div className="mb-6">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-[#F28C28] font-bold">HR Super Admin</p>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[#FF9412] font-bold">HR Super Admin</p>
         <h1 className="text-2xl font-extrabold ink-body tracking-tight">Access Control</h1>
         <p className="text-sm ink-soft mt-1">Grant or revoke individual sections and actions for each HR user. Changes apply to their very next request.</p>
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-[#198754]/10 border border-[#198754]/25 px-4 py-2.5 text-sm text-[#198754] flex items-start justify-between gap-3">
+        <div className="mb-4 rounded-lg bg-[#659616]/10 border border-[#659616]/25 px-4 py-2.5 text-sm text-[#659616] flex items-start justify-between gap-3">
           <span>{message}</span><button onClick={() => setMessage("")} className="font-bold">×</button>
         </div>
       )}
@@ -143,10 +143,10 @@ export default function AccessControl() {
               <li key={u.id}>
                 <button
                   onClick={() => setSelectedId(u.id)}
-                  className={`w-full text-left px-3 py-3 rounded-xl transition-colors ${selectedId === u.id ? "bg-[#198754]/10 border border-[#198754]/30" : "hover:bg-[#171717]/5"}`}
+                  className={`w-full text-left px-3 py-3 rounded-xl transition-colors ${selectedId === u.id ? "bg-[#659616]/10 border border-[#659616]/30" : "hover:bg-[#171717]/5"}`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#198754]/15 text-[#198754] font-bold flex items-center justify-center text-xs">
+                    <div className="w-9 h-9 rounded-full bg-[#659616]/15 text-[#659616] font-bold flex items-center justify-center text-xs">
                       {(u.name || u.email || "?").charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0">
@@ -191,12 +191,12 @@ export default function AccessControl() {
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] uppercase font-bold ink-soft">Per-user overrides</p>
-                  <p className="text-sm font-bold ink-body"><span className="text-[#198754]">{grantsCount} grant{grantsCount === 1 ? "" : "s"}</span> · <span className="text-red-600">{revocationsCount} revocation{revocationsCount === 1 ? "" : "s"}</span></p>
+                  <p className="text-sm font-bold ink-body"><span className="text-[#659616]">{grantsCount} grant{grantsCount === 1 ? "" : "s"}</span> · <span className="text-red-600">{revocationsCount} revocation{revocationsCount === 1 ? "" : "s"}</span></p>
                 </div>
               </div>
 
               {targetIsController && (
-                <div className="mb-4 rounded-lg border border-[#F28C28]/40 bg-[#F28C28]/10 px-4 py-3 text-xs text-[#B15A10]">
+                <div className="mb-4 rounded-lg border border-[#FF9412]/40 bg-[#FF9412]/10 px-4 py-3 text-xs text-[#B15A10]">
                   <span className="font-bold">Full-access account.</span> SUPER_ADMIN and IT_ADMIN always keep every permission — overrides are ignored for this user.
                 </div>
               )}
@@ -221,13 +221,13 @@ export default function AccessControl() {
                               aria-checked={enabled}
                               disabled={targetIsController}
                               onClick={() => toggle(p)}
-                              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-all ${enabled ? "border-[#198754]/40 bg-[#198754]/5" : "border-[#171717]/10 bg-white"} ${targetIsController ? "opacity-60 cursor-not-allowed" : "hover:border-[#198754]/40"}`}
+                              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-all ${enabled ? "border-[#659616]/40 bg-[#659616]/5" : "border-[#171717]/10 bg-white"} ${targetIsController ? "opacity-60 cursor-not-allowed" : "hover:border-[#659616]/40"}`}
                             >
                               <span className="min-w-0">
                                 <span className="block text-[11px] font-semibold ink-body leading-tight truncate">{p.description || prettify(p.key)}</span>
-                                <span className="block text-[9px] text-[#198754] font-mono truncate">{p.key}{isOverride ? ` · ${p.override === "GRANT" ? "granted" : "revoked"}` : ""}</span>
+                                <span className="block text-[9px] text-[#659616] font-mono truncate">{p.key}{isOverride ? ` · ${p.override === "GRANT" ? "granted" : "revoked"}` : ""}</span>
                               </span>
-                              <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${enabled ? "bg-[#198754]" : "bg-[#171717]/20"}`}>
+                              <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${enabled ? "bg-[#659616]" : "bg-[#171717]/20"}`}>
                                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${enabled ? "left-[18px]" : "left-0.5"}`} />
                               </span>
                             </button>

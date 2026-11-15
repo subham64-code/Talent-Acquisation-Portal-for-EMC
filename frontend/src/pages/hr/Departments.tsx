@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 import DataTable, { type Column } from "../../components/DataTable";
@@ -43,12 +43,12 @@ export default function Departments() {
   const columns: Column<any>[] = [
     { key: "idx", header: "#", render: (_r, i) => <span className="ink-soft">{i + 1}</span> },
     { key: "name", header: "Department", render: (d) => (
-      <Link to={`/hr/departments/${d.id}`} className="font-medium text-[#198754] hover:underline">{d.name}</Link>
+      <Link to={`/hr/departments/${d.id}`} className="font-medium text-[#659616] hover:underline">{d.name}</Link>
     ) },
     { key: "code", header: "Code", hideOnMobile: true, render: (d) => <span className="font-mono text-xs ink-soft">{d.code}</span> },
     { key: "desc", header: "Description", hideOnMobile: true, render: (d) => <span className="ink-soft">{d.description || "—"}</span> },
     { key: "active", header: "Active", render: (d) => (
-      <span className={`badge whitespace-nowrap ${d.isActive ? "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80" : "border-[#171717]/15 bg-[#171717]/5 ink-soft"}`}>
+      <span className={`badge whitespace-nowrap ${d.isActive ? "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80" : "border-[#171717]/15 bg-[#171717]/5 ink-soft"}`}>
         {d.isActive ? "Active" : "Inactive"}
       </span>
     ) },
@@ -76,7 +76,7 @@ export default function Departments() {
       </div>
 
       {(error || message) && (
-        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#198754]/10 border-[#198754]/25 text-[#198754]"}`}>
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#659616]/10 border-[#659616]/25 text-[#659616]"}`}>
           {error || message}
         </div>
       )}

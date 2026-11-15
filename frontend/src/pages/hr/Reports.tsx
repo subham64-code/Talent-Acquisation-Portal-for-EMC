@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { hrApi, api } from "../../lib/api";
 import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
 
@@ -112,7 +112,7 @@ export default function Reports() {
         </div>
       )}
 
-      {typesError && <div className="mb-4 rounded-lg bg-[#F28C28]/10 border border-[#F28C28]/30 px-4 py-2.5 text-xs text-[#B15A10]">{typesError}</div>}
+      {typesError && <div className="mb-4 rounded-lg bg-[#FF9412]/10 border border-[#FF9412]/30 px-4 py-2.5 text-xs text-[#B15A10]">{typesError}</div>}
       {error && <div className="mb-4 rounded-lg bg-orange-50 border border-orange-200 px-4 py-3 text-sm text-orange-800">{error}</div>}
 
       <div className="card p-4 sm:p-5 mb-6 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">

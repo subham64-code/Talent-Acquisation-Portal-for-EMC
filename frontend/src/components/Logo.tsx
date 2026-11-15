@@ -1,11 +1,22 @@
-export default function Logo({ size = 40 }: { size?: number }) {
-  return (
+export default function Logo({ size = 40, onDark = false }: { size?: number; onDark?: boolean }) {
+  const img = (
     <img
-      src="https://ecometrix.co.in/wp-content/uploads/2026/05/cropped-EMC-Logo-White-UT-1-e1780053104843.png"
-      alt="EMC Logo"
+      src="/assets/ecometrix-logo.png"
+      alt="Ecometrix Logo"
       width={size}
       height={size}
-      style={{ display: "block" }}
+      style={{ display: "block", objectFit: "contain" }}
     />
   );
+  if (onDark) {
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded-xl bg-white p-1.5 shadow-sm"
+        style={{ lineHeight: 0 }}
+      >
+        {img}
+      </span>
+    );
+  }
+  return img;
 }

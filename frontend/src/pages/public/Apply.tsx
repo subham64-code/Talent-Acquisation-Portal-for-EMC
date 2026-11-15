@@ -238,8 +238,8 @@ export default function Apply() {
       <nav className="surface-ink border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/career" className="flex items-center gap-2">
-            <Logo size={30} />
-            <span className="font-bold text-white">EMC<span className="text-[#F28C28]">.</span> Careers</span>
+            <Logo size={30}  onDark />
+            <span className="font-bold text-white">EMC<span className="text-[#FF9412]">.</span> Careers</span>
           </Link>
           <Link to="/careers/jobs" className="px-4 py-2 rounded-lg border border-white/25 text-white text-sm font-medium hover:bg-white/10">
             View all jobs
@@ -255,7 +255,7 @@ export default function Apply() {
             const active = i === currentStep;
             return (
               <li key={label} className="flex items-center gap-1.5 sm:gap-3">
-                <span className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] sm:text-sm font-bold border transition-colors ${done ? "bg-[#198754] border-[#198754] text-white" : active ? "border-[#F28C28] text-[#F28C28] bg-[#F28C28]/10" : "border-[#171717]/15 text-[#171717]/40"}`}>
+                <span className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] sm:text-sm font-bold border transition-colors ${done ? "bg-[#659616] border-[#659616] text-white" : active ? "border-[#FF9412] text-[#FF9412] bg-[#FF9412]/10" : "border-[#171717]/15 text-[#171717]/40"}`}>
                   {done ? "✓" : i + 1}
                 </span>
                 <span className={`text-[10px] min-[400px]:text-xs sm:text-sm font-semibold whitespace-nowrap ${active ? "ink-body" : "ink-soft"}`}>{label}</span>
@@ -273,7 +273,7 @@ export default function Apply() {
         {step === "details" && (
           <form onSubmit={goToReview} noValidate className="space-y-6">
             <div className="card p-5 sm:p-6">
-              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#F28C28]">1.</span> Personal Information</h2>
+              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#FF9412]">1.</span> Personal Information</h2>
               <p className="text-xs ink-soft mb-5">All fields marked <span className="text-red-500">*</span> are mandatory.</p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -286,7 +286,7 @@ export default function Apply() {
                 <Field label="Mobile Number" required error={errors.mobile} hint={mobileHint}>
                   <input
                     id="field-mobile"
-                    className={`input tracking-widest font-semibold ${mobileValid ? "!border-[#198754]/60" : ""}`}
+                    className={`input tracking-widest font-semibold ${mobileValid ? "!border-[#659616]/60" : ""}`}
                     inputMode="numeric"
                     placeholder="9876543210"
                     value={form.mobile}
@@ -295,9 +295,9 @@ export default function Apply() {
                   />
                   <div id="mobile-counter" className="flex items-center justify-between mt-1">
                     <div className="h-1.5 flex-1 rounded bg-[#171717]/10 overflow-hidden mr-2">
-                      <div className={`h-full transition-all duration-200 ${mobileValid ? "bg-[#198754]" : "bg-[#F28C28]"}`} style={{ width: `${Math.min(100, (mobileDigits.length / 10) * 100)}%` }} />
+                      <div className={`h-full transition-all duration-200 ${mobileValid ? "bg-[#659616]" : "bg-[#FF9412]"}`} style={{ width: `${Math.min(100, (mobileDigits.length / 10) * 100)}%` }} />
                     </div>
-                    <span className={`text-[10px] font-bold tabular-nums ${mobileValid ? "text-[#198754]" : "ink-soft"}`}>{mobileDigits.length}/10</span>
+                    <span className={`text-[10px] font-bold tabular-nums ${mobileValid ? "text-[#659616]" : "ink-soft"}`}>{mobileDigits.length}/10</span>
                   </div>
                 </Field>
                 <Field label="Date of Birth">
@@ -336,7 +336,7 @@ export default function Apply() {
             </div>
 
             <div className="card p-5 sm:p-6">
-              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#F28C28]">2.</span> Qualifications &amp; Education</h2>
+              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#FF9412]">2.</span> Qualifications &amp; Education</h2>
               <p className="text-xs ink-soft mb-5">Select all that apply, then fill in your highest qualification.</p>
 
               <div className="mb-4">
@@ -350,7 +350,7 @@ export default function Apply() {
                         type="button"
                         aria-pressed={active}
                         onClick={() => toggleQualification(q)}
-                        className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${active ? "bg-[#198754] border-[#198754] text-white shadow-[0_2px_10px_rgba(25,135,84,.35)]" : "border-[#171717]/15 ink-soft hover:border-[#198754]/50 hover:text-[#198754]"}`}
+                        className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${active ? "bg-[#659616] border-[#659616] text-white shadow-[0_2px_10px_rgba(122,180,27,.35)]" : "border-[#171717]/15 ink-soft hover:border-[#659616]/50 hover:text-[#659616]"}`}
                       >
                         {q}
                       </button>
@@ -386,7 +386,7 @@ export default function Apply() {
             </div>
 
             <div className="card p-5 sm:p-6">
-              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#F28C28]">3.</span> Professional Experience</h2>
+              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#FF9412]">3.</span> Professional Experience</h2>
               <p className="text-xs ink-soft mb-5">Freshers: enter 0. Experience fields are never forced.</p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -441,7 +441,7 @@ export default function Apply() {
             </div>
 
             <div className="card p-5 sm:p-6">
-              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#F28C28]">4.</span> Position &amp; CV</h2>
+              <h2 className="text-base sm:text-lg font-extrabold ink-body mb-1"><span className="text-[#FF9412]">4.</span> Position &amp; CV</h2>
               <p className="text-xs ink-soft mb-5">Choose the role and upload your latest CV.</p>
 
               <div className="grid grid-cols-1 gap-4">
@@ -464,26 +464,26 @@ export default function Apply() {
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragLeave={() => setDragActive(false)}
                     onDrop={onDrop}
-                    className={`relative rounded-2xl border-2 border-dashed px-6 py-8 sm:py-10 text-center cursor-pointer transition-all duration-200 outline-none select-none ${dragActive ? "border-[#F28C28] bg-[#F28C28]/10 scale-[1.01]" : cvFile ? "border-[#198754]/60 bg-[#198754]/5" : "border-[#198754]/40 bg-[#198754]/5 hover:border-[#198754] hover:bg-[#198754]/10 focus:border-[#198754]"} ${errors.cv ? "!border-red-400" : ""}`}
+                    className={`relative rounded-2xl border-2 border-dashed px-6 py-8 sm:py-10 text-center cursor-pointer transition-all duration-200 outline-none select-none ${dragActive ? "border-[#FF9412] bg-[#FF9412]/10 scale-[1.01]" : cvFile ? "border-[#659616]/60 bg-[#659616]/5" : "border-[#659616]/40 bg-[#659616]/5 hover:border-[#659616] hover:bg-[#659616]/10 focus:border-[#659616]"} ${errors.cv ? "!border-red-400" : ""}`}
                   >
                     <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => acceptFile(e.target.files?.[0])} />
                     {!cvFile ? (
                       <>
-                        <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#198754] to-[#146C43] flex items-center justify-center shadow-[0_8px_24px_rgba(25,135,84,.35)]">
+                        <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-[#659616] to-[#4C730D] flex items-center justify-center shadow-[0_8px_24px_rgba(122,180,27,.35)]">
                           <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
                         </div>
                         <p className="font-bold ink-body">Drag &amp; drop your CV here</p>
-                        <p className="text-xs ink-soft mt-1">or <span className="text-[#198754] font-semibold underline underline-offset-2">browse from your device</span></p>
+                        <p className="text-xs ink-soft mt-1">or <span className="text-[#659616] font-semibold underline underline-offset-2">browse from your device</span></p>
                         <p className="text-[10px] ink-soft mt-3 tracking-wide uppercase">PDF · DOC · DOCX &nbsp;|&nbsp; Max {MAX_CV_MB} MB</p>
                       </>
                     ) : (
                       <div className="flex flex-col sm:flex-row items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="w-14 h-14 rounded-xl bg-[#198754]/15 flex items-center justify-center text-2xl">📄</div>
+                        <div className="w-14 h-14 rounded-xl bg-[#659616]/15 flex items-center justify-center text-2xl">📄</div>
                         <div className="text-left min-w-0">
                           <p className="font-semibold ink-body text-sm break-all">{cvFile.name}</p>
-                          <p className="text-[11px] ink-soft mt-0.5">{formatBytes(cvFile.size)} · {cvFile.type === "application/pdf" ? "PDF Document" : "Word Document"} · <span className="text-[#198754] font-semibold">Ready to upload</span></p>
+                          <p className="text-[11px] ink-soft mt-0.5">{formatBytes(cvFile.size)} · {cvFile.type === "application/pdf" ? "PDF Document" : "Word Document"} · <span className="text-[#659616] font-semibold">Ready to upload</span></p>
                           <div className="flex gap-2 mt-2">
-                            <button type="button" className="text-xs font-semibold text-[#198754] border border-[#198754]/40 rounded-md px-2.5 py-1 hover:bg-[#198754]/10" onClick={() => fileInputRef.current?.click()}>Replace</button>
+                            <button type="button" className="text-xs font-semibold text-[#659616] border border-[#659616]/40 rounded-md px-2.5 py-1 hover:bg-[#659616]/10" onClick={() => fileInputRef.current?.click()}>Replace</button>
                             <button type="button" className="text-xs font-semibold text-red-600 border border-red-300 rounded-md px-2.5 py-1 hover:bg-red-50" onClick={() => setCvFile(null)}>Remove</button>
                           </div>
                         </div>
@@ -505,7 +505,7 @@ export default function Apply() {
         {step === "review" && (
           <div className="card p-5 sm:p-6 animate-in">
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-lg bg-[#F28C28]/15 flex items-center justify-center">📝</div>
+              <div className="w-9 h-9 rounded-lg bg-[#FF9412]/15 flex items-center justify-center">📝</div>
               <h2 className="text-lg font-extrabold ink-body">Review your application</h2>
             </div>
             <p className="text-xs ink-soft mb-5">Please verify every detail below. You can go back to edit anything before submitting.</p>
@@ -527,10 +527,10 @@ export default function Apply() {
               <div className="mt-5">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold ink-soft">Uploading your application…</span>
-                  <span className="text-xs font-bold text-[#198754] tabular-nums">{uploadProgress}%</span>
+                  <span className="text-xs font-bold text-[#659616] tabular-nums">{uploadProgress}%</span>
                 </div>
                 <div className="h-2.5 rounded-full bg-[#171717]/10 overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-[#2BA56D] via-[#198754] to-[#146C43] transition-all duration-150" style={{ width: `${uploadProgress}%` }} />
+                  <div className="h-full bg-gradient-to-r from-[#84BD26] via-[#659616] to-[#4C730D] transition-all duration-150" style={{ width: `${uploadProgress}%` }} />
                 </div>
               </div>
             )}
@@ -550,14 +550,14 @@ export default function Apply() {
         {/* ============ STEP 3 — DONE ============ */}
         {step === "done" && result && (
           <div className="card p-8 sm:p-12 text-center animate-pop">
-            <div className="w-20 h-20 mx-auto rounded-full bg-[#198754]/15 flex items-center justify-center mb-5">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#198754" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            <div className="w-20 h-20 mx-auto rounded-full bg-[#659616]/15 flex items-center justify-center mb-5">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#659616" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
             </div>
             <h2 className="text-2xl font-extrabold ink-body">Application Submitted!</h2>
             <p className="ink-soft mt-2 max-w-md mx-auto">Thank you, <span className="font-semibold ink-body">{form.fullName}</span>. Your application for <span className="font-semibold ink-body">{result.jobTitle}</span> has been received. A confirmation email is on its way to <span className="font-semibold ink-body">{form.email}</span>.</p>
-            <div className="inline-flex flex-col items-center gap-1 mt-6 rounded-2xl border border-[#198754]/30 bg-[#198754]/5 px-8 py-5">
+            <div className="inline-flex flex-col items-center gap-1 mt-6 rounded-2xl border border-[#659616]/30 bg-[#659616]/5 px-8 py-5">
               <span className="text-[10px] uppercase tracking-[0.2em] ink-soft font-bold">Application ID</span>
-              <span className="text-2xl sm:text-3xl font-black text-[#198754] font-mono tracking-wider">{result.applicationCode}</span>
+              <span className="text-2xl sm:text-3xl font-black text-[#659616] font-mono tracking-wider">{result.applicationCode}</span>
               <span className="text-[11px] ink-soft">Submitted on {new Date(result.appliedAt).toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short" })}</span>
             </div>
             <p className="text-[11px] ink-soft mt-5">Save this Application ID — quote it in any correspondence with EMC HR.</p>

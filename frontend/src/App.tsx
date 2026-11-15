@@ -32,7 +32,7 @@ function RouteFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F5F7F6]">
       <div className="text-center">
-        <div className="w-10 h-10 border-4 border-[#198754]/20 border-t-[#198754] rounded-full animate-spin mx-auto mb-4" />
+        <div className="w-10 h-10 border-4 border-[#659616]/20 border-t-[#659616] rounded-full animate-spin mx-auto mb-4" />
         <p className="text-sm text-[#3B3B3B]">Loading…</p>
       </div>
     </div>

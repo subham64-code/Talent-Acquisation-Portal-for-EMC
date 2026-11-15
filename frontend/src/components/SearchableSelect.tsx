@@ -67,7 +67,7 @@ export default function SearchableSelect({ id, value, onChange, options, placeho
             <li key={o}>
               <button
                 type="button"
-                className="w-full text-left px-3 py-2.5 hover:bg-[#198754]/10 ink-body"
+                className="w-full text-left px-3 py-2.5 hover:bg-[#659616]/10 ink-body"
                 onMouseDown={(e) => { e.preventDefault(); commit(o); }}
               >
                 {o}

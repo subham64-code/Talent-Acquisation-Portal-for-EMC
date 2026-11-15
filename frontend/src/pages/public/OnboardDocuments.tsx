@@ -6,9 +6,9 @@ import Logo from "../../components/Logo";
 
 const STATUS_STYLE: Record<string, string> = {
   NOT_UPLOADED: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  UPLOADED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  UPLOADED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   UNDER_REVIEW: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
-  ACCEPTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  ACCEPTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   REJECTED: "border-red-200 bg-red-50 text-red-700",
   REUPLOAD_REQUIRED: "border-orange-200 bg-orange-50 text-orange-800",
 };
@@ -82,26 +82,26 @@ export default function OnboardDocuments() {
     <div className="min-h-screen surface-app public-light">
       <nav className="surface-ink border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-2">
-          <Logo size={30} />
-          <span className="font-bold text-white">EMC<span className="text-[#F28C28]">.</span> Onboarding</span>
+          <Logo size={30}  onDark />
+          <span className="font-bold text-white">EMC<span className="text-[#FF9412]">.</span> Onboarding</span>
         </div>
       </nav>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         <div className="card p-5 sm:p-6 mb-6">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-[#F28C28] font-bold">Secure document portal</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-[#FF9412] font-bold">Secure document portal</p>
           <h1 className="text-2xl font-extrabold ink-body mt-1">Upload your onboarding documents</h1>
           <p className="text-sm ink-soft mt-1">
             {data?.application?.candidateName} · {data?.application?.jobTitle}{data?.application?.department ? ` · ${data.application.department}` : ""} · App ID <span className="font-mono font-semibold">{data?.application?.applicationCode}</span>
           </p>
           <div className="mt-4 flex items-center gap-3">
             <div className="h-2 flex-1 rounded-full bg-[#171717]/10 overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-[#2BA56D] to-[#198754] transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-full bg-gradient-to-r from-[#84BD26] to-[#659616] transition-all" style={{ width: `${progress}%` }} />
             </div>
-            <span className="text-xs font-bold text-[#198754] tabular-nums">{progress}%</span>
+            <span className="text-xs font-bold text-[#659616] tabular-nums">{progress}%</span>
           </div>
           {allRequiredUploaded && (
-            <div className="mt-4 rounded-lg border border-[#198754]/30 bg-[#198754]/10 px-4 py-3 text-sm text-[#198754] font-medium">
+            <div className="mt-4 rounded-lg border border-[#659616]/30 bg-[#659616]/10 px-4 py-3 text-sm text-[#659616] font-medium">
               ✓ All required documents uploaded. EMC HR has been notified and will verify them. You will receive an email once verification is complete.
             </div>
           )}
@@ -119,7 +119,7 @@ export default function OnboardDocuments() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="font-bold ink-body text-sm leading-snug">{d.category?.name}</h3>
-                    {d.category?.isRequired ? <span className="text-[10px] uppercase font-bold text-[#F28C28] tracking-wider">Required</span> : <span className="text-[10px] uppercase font-bold ink-soft tracking-wider">Optional</span>}
+                    {d.category?.isRequired ? <span className="text-[10px] uppercase font-bold text-[#FF9412] tracking-wider">Required</span> : <span className="text-[10px] uppercase font-bold ink-soft tracking-wider">Optional</span>}
                   </div>
                   <span className={`badge whitespace-nowrap ${STATUS_STYLE[d.status] || STATUS_STYLE.NOT_UPLOADED}`}>{STATUS_LABEL[d.status] || d.status}</span>
                 </div>
@@ -130,17 +130,17 @@ export default function OnboardDocuments() {
                   <div className="flex items-center gap-2 text-xs ink-soft min-w-0">
                     <span className="truncate">{d.file.originalName}</span>
                     <span className="shrink-0">({(d.file.size / 1024).toFixed(0)} KB)</span>
-                    {viewUrl && <a className="shrink-0 text-[#198754] font-semibold hover:underline" href={viewUrl} target="_blank" rel="noreferrer">View</a>}
+                    {viewUrl && <a className="shrink-0 text-[#659616] font-semibold hover:underline" href={viewUrl} target="_blank" rel="noreferrer">View</a>}
                   </div>
                 )}
 
                 {busy ? (
                   <div>
                     <div className="flex justify-between text-[10px] font-semibold ink-soft mb-1"><span>Uploading…</span><span>{pct}%</span></div>
-                    <div className="h-2 rounded-full bg-[#171717]/10 overflow-hidden"><div className="h-full bg-[#198754] transition-all" style={{ width: `${pct}%` }} /></div>
+                    <div className="h-2 rounded-full bg-[#171717]/10 overflow-hidden"><div className="h-full bg-[#659616] transition-all" style={{ width: `${pct}%` }} /></div>
                   </div>
                 ) : (
-                  <label className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#198754]/50 px-3 py-2.5 text-xs font-semibold text-[#198754] cursor-pointer hover:bg-[#198754]/5 transition-colors">
+                  <label className="mt-auto flex items-center justify-center gap-2 rounded-lg border border-dashed border-[#659616]/50 px-3 py-2.5 text-xs font-semibold text-[#659616] cursor-pointer hover:bg-[#659616]/5 transition-colors">
                     {d.status === "NOT_UPLOADED" ? "+ Choose file to upload" : "↻ Upload a replacement"}
                     <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="hidden" onChange={(e) => upload(d.categoryId, e.target.files?.[0])} />
                   </label>

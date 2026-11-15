@@ -7,9 +7,9 @@ type Tab = "SUBMITTED" | "PENDING";
 
 const STATUS_TONE: Record<string, string> = {
   NOT_UPLOADED: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  UPLOADED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  UPLOADED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   UNDER_REVIEW: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
-  ACCEPTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  ACCEPTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   REJECTED: "border-red-200 bg-red-50 text-red-700",
   REUPLOAD_REQUIRED: "border-orange-200 bg-orange-50 text-orange-800",
 };
@@ -101,7 +101,7 @@ export default function Onboarding() {
     { key: "cand", header: "Candidate", render: (d) => <span className="font-medium ink-body">{d.application?.candidate?.fullName}</span> },
     { key: "code", header: "Application ID", hideOnMobile: true, render: (d) => <span className="font-mono text-xs ink-soft">{d.application?.applicationCode}</span> },
     { key: "cat", header: "Document", render: (d) => <span className="ink-soft">{d.category?.name}</span> },
-    { key: "req", header: "Required", hideOnMobile: true, render: (d) => d.category?.isRequired ? <span className="text-[10px] font-bold uppercase text-[#F28C28]">Yes</span> : <span className="ink-soft text-xs">No</span> },
+    { key: "req", header: "Required", hideOnMobile: true, render: (d) => d.category?.isRequired ? <span className="text-[10px] font-bold uppercase text-[#FF9412]">Yes</span> : <span className="ink-soft text-xs">No</span> },
     { key: "status", header: "Verification", render: (d) => <span className={`badge whitespace-nowrap ${STATUS_TONE[d.status] || STATUS_TONE.NOT_UPLOADED}`}>{STATUS_LABEL[d.status] || d.status}</span> },
     { key: "at", header: "Updated", hideOnMobile: true, render: (d) => <span className="ink-soft text-xs">{d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString() : "—"}</span> },
     {
@@ -126,7 +126,7 @@ export default function Onboarding() {
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-[#198754]/10 border border-[#198754]/25 px-4 py-2.5 text-sm text-[#198754] flex items-start justify-between gap-3">
+        <div className="mb-4 rounded-lg bg-[#659616]/10 border border-[#659616]/25 px-4 py-2.5 text-sm text-[#659616] flex items-start justify-between gap-3">
           <span>{message}</span><button onClick={() => setMessage("")} className="font-bold">×</button>
         </div>
       )}
@@ -137,19 +137,19 @@ export default function Onboarding() {
       )}
 
       {visibleReady.length > 0 && (
-        <div className="card p-4 sm:p-5 mb-5 border border-[#198754]/30">
+        <div className="card p-4 sm:p-5 mb-5 border border-[#659616]/30">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <h2 className="font-extrabold ink-body">Ready for onboarding</h2>
               <p className="text-xs ink-soft">These accepted candidates can now be added to your employee register.</p>
             </div>
-            <span className="badge border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80">{visibleReady.length} ready</span>
+            <span className="badge border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80">{visibleReady.length} ready</span>
           </div>
           <ul className="divide-y divide-[#171717]/8">
             {visibleReady.map((a) => (
               <li key={a.id} className="py-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-10 h-10 rounded-full bg-[#198754]/15 text-[#198754] font-extrabold flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-[#659616]/15 text-[#659616] font-extrabold flex items-center justify-center shrink-0">
                     {(a.candidate?.fullName || "?").charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
@@ -172,10 +172,10 @@ export default function Onboarding() {
 
       <div className="flex gap-1 p-1 rounded-xl bg-[#171717]/5 mb-5 w-full sm:w-auto">
         <button onClick={() => setTab("SUBMITTED")} className={`px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${tab === "SUBMITTED" ? "surface-card ink-body shadow-sm" : "ink-soft"}`}>
-          Accepted / Submitted <span className="ml-1 text-[#198754] font-bold">{submitted.length}</span>
+          Accepted / Submitted <span className="ml-1 text-[#659616] font-bold">{submitted.length}</span>
         </button>
         <button onClick={() => setTab("PENDING")} className={`px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${tab === "PENDING" ? "surface-card ink-body shadow-sm" : "ink-soft"}`}>
-          Pending / Not Uploaded <span className="ml-1 text-[#F28C28] font-bold">{pending.length}</span>
+          Pending / Not Uploaded <span className="ml-1 text-[#FF9412] font-bold">{pending.length}</span>
         </button>
       </div>
 

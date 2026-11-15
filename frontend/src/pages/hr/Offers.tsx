@@ -1,12 +1,12 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { hrApi } from "../../lib/api";
 import DataTable, { type Column } from "../../components/DataTable";
 
 const TONE: Record<string, string> = {
   DRAFT: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  SENT: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
-  ACCEPTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  SENT: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
+  ACCEPTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   VIEWED: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
   DECLINED: "border-red-200 bg-red-50 text-red-700",
   EXPIRED: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
@@ -116,7 +116,7 @@ export default function Offers() {
       </div>
 
       {(error || message) && (
-        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#198754]/10 border-[#198754]/25 text-[#198754]"}`}>
+        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#659616]/10 border-[#659616]/25 text-[#659616]"}`}>
           {error || message}
         </div>
       )}
@@ -135,7 +135,7 @@ export default function Offers() {
                   ))}
                 </select>
                 {applications.length === 0 && (
-                  <p className="text-[11px] text-[#F28C28]">No selected candidates yet. Mark applications as SELECTED from View Submissions or from Interview Scheduling — they will appear here immediately.</p>
+                  <p className="text-[11px] text-[#FF9412]">No selected candidates yet. Mark applications as SELECTED from View Submissions or from Interview Scheduling — they will appear here immediately.</p>
                 )}
               </div>
               <div className="flex flex-col gap-1.5">

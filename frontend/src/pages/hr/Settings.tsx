@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { hrApi } from "../../lib/api";
 
 export default function Settings() {
@@ -29,9 +29,10 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-surface p-4 sm:px-6 lg:px-8 py-8">
-      <h2 className="text-xl font-bold ink-body mb-6">Settings</h2>
-      {loading ? <div className="h-64 flex items-center justify-center ink-soft">Loadingâ€¦</div> : (
+    <div className="p-4 sm:p-6 lg:p-8">
+      <span className="page-eyebrow">Administration</span>
+      <h1 className="text-2xl sm:text-[1.7rem] font-extrabold tracking-tight text-[var(--ink)] mb-6">Settings</h1>
+      {loading ? <div className="h-64 flex items-center justify-center ink-soft">Loading…</div> : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="card p-6">
             <h3 className="font-bold ink-body mb-4">AI Scoring Weights</h3>
@@ -44,17 +45,17 @@ export default function Settings() {
                 </div>
               ))}
               <p className="text-xs ink-soft">Total: {Object.values(form).reduce((a, b) => a + Number(b || 0), 0)} {valid ? "" : "(must equal 100)"}</p>
-              <button className="btn-primary" disabled={saving}>{saving ? "Savingâ€¦" : "Save Weights"}</button>
-              {message && <p className={`text-sm mt-2 ${message.startsWith("Weights") ? "text-[#146c43]" : "text-red-700"}`}>{message}</p>}
+              <button className="btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Weights"}</button>
+              {message && <p className={`text-sm mt-2 ${message.startsWith("Weights") ? "text-[#4C730D]" : "text-red-700"}`}>{message}</p>}
             </form>
           </div>
           <div className="card p-6">
             <h3 className="font-bold ink-body mb-4">Integration Status</h3>
             <div className="space-y-2">
-              <div className="flex justify-between items-center"><span className="text-sm ink-soft">Google Drive</span><span className={`text-xs font-medium ${status.googleDrive ? "text-[#146c43]" : "ink-soft"}`}>{status.googleDrive ? "Enabled" : "Not configured"}</span></div>
-              <div className="flex justify-between items-center"><span className="text-sm ink-soft">Google Sheets</span><span className={`text-xs font-medium ${status.googleSheets ? "text-[#146c43]" : "ink-soft"}`}>{status.googleSheets ? "Enabled" : "Not configured"}</span></div>
-              <div className="flex justify-between items-center"><span className="text-sm ink-soft">SMTP Email</span><span className={`text-xs font-medium ${status.smtp ? "text-[#146c43]" : "ink-soft"}`}>{status.smtp ? "Configured" : "Simulated (dev)"}</span></div>
-              <div className="flex justify-between items-center"><span className="text-sm ink-soft">OCR</span><span className={`text-xs font-medium ${status.ocr ? "text-[#146c43]" : "ink-soft"}`}>{status.ocr ? "Enabled" : "Disabled"}</span></div>
+              <div className="flex justify-between items-center"><span className="text-sm ink-soft">Google Drive</span><span className={`text-xs font-medium ${status.googleDrive ? "text-[#4C730D]" : "ink-soft"}`}>{status.googleDrive ? "Enabled" : "Not configured"}</span></div>
+              <div className="flex justify-between items-center"><span className="text-sm ink-soft">Google Sheets</span><span className={`text-xs font-medium ${status.googleSheets ? "text-[#4C730D]" : "ink-soft"}`}>{status.googleSheets ? "Enabled" : "Not configured"}</span></div>
+              <div className="flex justify-between items-center"><span className="text-sm ink-soft">SMTP Email</span><span className={`text-xs font-medium ${status.smtp ? "text-[#4C730D]" : "ink-soft"}`}>{status.smtp ? "Configured" : "Simulated (dev)"}</span></div>
+              <div className="flex justify-between items-center"><span className="text-sm ink-soft">OCR</span><span className={`text-xs font-medium ${status.ocr ? "text-[#4C730D]" : "ink-soft"}`}>{status.ocr ? "Enabled" : "Disabled"}</span></div>
             </div>
           </div>
         </div>

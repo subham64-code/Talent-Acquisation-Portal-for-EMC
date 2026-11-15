@@ -38,8 +38,8 @@ export default function JobDetail() {
       <nav className="surface-ink sticky top-0 z-40 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <Link to="/careers/jobs" className="flex items-center gap-2">
-            <Logo size={30} />
-            <span className="font-bold text-lg text-white">EMC<span className="text-[#F28C28]">.</span> Careers</span>
+            <Logo size={30}  onDark />
+            <span className="font-bold text-lg text-white">EMC<span className="text-[#FF9412]">.</span> Careers</span>
           </Link>
           <Link to="/careers/jobs" className="px-4 py-2 rounded-lg border border-white/25 text-white text-sm font-medium hover:bg-white/10 transition-colors">
             ← All Jobs
@@ -49,8 +49,8 @@ export default function JobDetail() {
 
       <div className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
         {applied && (
-          <div className="rounded-xl border border-[#198754]/40 bg-[#198754]/10 p-4 mb-5">
-            <p className="font-semibold text-[#198754] mb-1">Application submitted successfully</p>
+          <div className="rounded-xl border border-[#659616]/40 bg-[#659616]/10 p-4 mb-5">
+            <p className="font-semibold text-[#659616] mb-1">Application submitted successfully</p>
             <p className="text-sm ink-soft">A confirmation email has been sent to your inbox with your application ID.</p>
           </div>
         )}
@@ -58,13 +58,13 @@ export default function JobDetail() {
         <div className="card p-6">
           <h1 className="text-2xl font-bold ink-body mb-3">{opening.title}</h1>
           <div className="flex flex-wrap gap-2 text-xs mb-6">
-            <span className="badge border-[#198754]/30 bg-[#198754]/20 text-[#198754]/80">
+            <span className="badge border-[#659616]/30 bg-[#659616]/20 text-[#659616]/80">
               {opening.status === "PUBLISHED" ? "Open" : opening.status}
             </span>
             <span className="badge border-[#171717]/20 bg-[#171717]/5 ink-body">{opening.department?.name}</span>
             <span className="badge border-[#171717]/20 bg-[#171717]/5 ink-body">{opening.positions} position(s)</span>
             <span className="badge border-[#171717]/20 bg-[#171717]/5 ink-body">{opening.location}</span>
-            <span className="badge border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80">{opening.employmentType?.name || "Full-Time"}</span>
+            <span className="badge border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80">{opening.employmentType?.name || "Full-Time"}</span>
             {opening.program?.name && <span className="badge border-[#171717]/20 bg-[#171717]/5 ink-body">{opening.program.name}</span>}
           </div>
 

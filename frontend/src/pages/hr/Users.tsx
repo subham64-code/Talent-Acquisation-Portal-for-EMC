@@ -1,11 +1,11 @@
-﻿import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { hrApi } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 
 const ROLE_TONE: Record<string, string> = {
-  SUPER_ADMIN: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  SUPER_ADMIN: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   IT_ADMIN: "border-[#171717]/20 bg-[#171717]/8 ink-body",
-  HR_ADMIN: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  HR_ADMIN: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
   HR_RECRUITER: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
   DEPARTMENT_MANAGER: "border-[#5C5C5C]/25 bg-[#5C5C5C]/10 text-[#5C5C5C]",
   INTERVIEWER: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
@@ -122,7 +122,7 @@ export default function Users() {
       </div>
 
       {(error || message) && (
-        <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#198754]/10 border-[#198754]/25 text-[#198754]"}`}>
+        <div className={`mb-5 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#659616]/10 border-[#659616]/25 text-[#659616]"}`}>
           {error || message}
         </div>
       )}
@@ -149,7 +149,7 @@ export default function Users() {
                   <label key={r.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-[#171717]/10 hover:bg-[#171717]/[0.03] cursor-pointer">
                     <input
                       type="checkbox"
-                      className="w-4 h-4 accent-[#198754]"
+                      className="w-4 h-4 accent-[#659616]"
                       checked={form.roleIds.split(",").filter(Boolean).includes(r.id)}
                       onChange={(e) => {
                         const ids = form.roleIds.split(",").filter(Boolean);
@@ -170,7 +170,7 @@ export default function Users() {
                   <label key={d.id} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#171717]/10 text-sm cursor-pointer">
                     <input
                       type="checkbox"
-                      className="w-3.5 h-3.5 accent-[#198754]"
+                      className="w-3.5 h-3.5 accent-[#659616]"
                       checked={form.departmentIds.split(",").filter(Boolean).includes(d.id)}
                       onChange={(e) => {
                         const ids = form.departmentIds.split(",").filter(Boolean);
@@ -233,7 +233,7 @@ export default function Users() {
                     <td className="ink-soft">{i + 1}</td>
                     <td className="font-medium ink-body">
                       {u.name}
-                      {u.id === user?.id && <span className="ml-2 text-[10px] text-[#198754] font-bold">(you)</span>}
+                      {u.id === user?.id && <span className="ml-2 text-[10px] text-[#659616] font-bold">(you)</span>}
                     </td>
                     <td className="ink-soft">{u.email}</td>
                     <td>
@@ -249,7 +249,7 @@ export default function Users() {
                       {u.departments?.map((d: any) => d.name).join(", ") || "All"}
                     </td>
                     <td>
-                      <span className={`badge ${u.isActive ? "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80" : "border-red-200 bg-red-50 text-red-700"}`}>
+                      <span className={`badge ${u.isActive ? "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80" : "border-red-200 bg-red-50 text-red-700"}`}>
                         {u.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>

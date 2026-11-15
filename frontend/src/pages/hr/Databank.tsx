@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
 import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
@@ -12,9 +12,9 @@ const CAT_LABEL: Record<string, string> = {
 };
 
 const CAT_TONE: Record<string, string> = {
-  EXISTING: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  EXISTING: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   FORMER: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  PIPELINE: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  PIPELINE: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
   ON_HOLD: "border-[#5C5C5C]/25 bg-[#5C5C5C]/10 text-[#5C5C5C]",
 };
 

@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { hrApi, api } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
@@ -13,10 +13,10 @@ const STAGE_LABEL: Record<string, string> = {
   SHORTLISTED: "Shortlisted", INTERVIEW_SCHEDULED: "Interview Scheduled", INTERVIEW_COMPLETED: "Interview Completed", ON_HOLD: "On Hold",
 };
 const STAGE_TONE: Record<string, string> = {
-  SHORTLISTED: "border-[#198754]/30 bg-[#198754]/10 text-[#198754]/80",
+  SHORTLISTED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
   INTERVIEW_SCHEDULED: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
   INTERVIEW_COMPLETED: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]",
-  ON_HOLD: "border-[#F28C28]/30 bg-[#F28C28]/10 text-[#F28C28]/80",
+  ON_HOLD: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -314,7 +314,7 @@ export default function Employees() {
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-[#198754]/10 border border-[#198754]/25 px-4 py-2.5 text-sm text-[#198754] flex items-start justify-between gap-3">
+        <div className="mb-4 rounded-lg bg-[#659616]/10 border border-[#659616]/25 px-4 py-2.5 text-sm text-[#659616] flex items-start justify-between gap-3">
           <span>{message}</span><button onClick={() => setMessage("")} className="font-bold">×</button>
         </div>
       )}
@@ -332,7 +332,7 @@ export default function Employees() {
             onClick={() => setTab(t.key)}
             className={`px-4 sm:px-5 py-2 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${tab === t.key ? "surface-card ink-body shadow-sm" : "ink-soft"}`}
           >
-            {t.label}{t.count !== undefined && <span className="ml-1.5 tabular-nums text-[#198754] font-bold">{t.count}</span>}
+            {t.label}{t.count !== undefined && <span className="ml-1.5 tabular-nums text-[#659616] font-bold">{t.count}</span>}
           </button>
         ))}
       </div>
@@ -495,8 +495,8 @@ export default function Employees() {
             </div>
             <p className="text-xs ink-soft mb-4">Paste email addresses or upload a CSV (one per line or comma-separated). Unknown emails create pending employee stubs automatically. Active invitations are never duplicated.</p>
             {bulkResult ? (
-              <div className="rounded-xl border border-[#198754]/30 bg-[#198754]/5 p-4 text-sm">
-                <p className="font-bold text-[#198754] mb-2">Invitation run complete</p>
+              <div className="rounded-xl border border-[#659616]/30 bg-[#659616]/5 p-4 text-sm">
+                <p className="font-bold text-[#659616] mb-2">Invitation run complete</p>
                 <ul className="text-xs ink-soft space-y-1">
                   <li>Sent: <b>{bulkResult.invited}</b></li>
                   <li>New employee records created: <b>{bulkResult.created}</b></li>
@@ -525,7 +525,7 @@ export default function Employees() {
                     {parsedBulkEmails.slice(0, 60).map((r, i) => (
                       <div key={i} className="flex items-center justify-between px-3 py-1.5 text-xs border-b border-[#171717]/5 last:border-0">
                         <span className="font-mono truncate">{r.email}</span>
-                        <span className={r.status === "valid" ? "text-[#198754] font-semibold" : "text-red-500"}>{r.status}</span>
+                        <span className={r.status === "valid" ? "text-[#659616] font-semibold" : "text-red-500"}>{r.status}</span>
                       </div>
                     ))}
                   </div>
