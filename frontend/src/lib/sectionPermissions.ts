@@ -19,6 +19,7 @@ export const SECTION_PERMISSIONS: Record<string, string> = {
   users: "users.manage",
   departments: "departments.manage",
   settings: "settings.manage",
+  audit: "audit.view",
 };
 
 export const CONTROLLER_ROLES = ["SUPER_ADMIN", "IT_ADMIN"];

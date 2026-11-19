@@ -5,7 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import PageHeading from "../../components/ref/PageHeading";
 import Button from "../../components/ref/Button";
 import Modal from "../../components/ref/Modal";
-import { Input, Select } from "../../components/ref/Input";
+import { Input } from "../../components/ref/Input";
 import StatusPill from "../../components/ref/StatusPill";
 
 export default function Users() {
@@ -16,7 +16,7 @@ export default function Users() {
   const [storage, setStorage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ name: "", email: "", roleIds: "", departmentIds: "" });
+  const [form, setForm] = useState<{ name: string; email: string; roleId: string; departmentIds: string[] }>({ name: "", email: "", roleId: "", departmentIds: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -40,20 +40,30 @@ export default function Users() {
     ]).finally(() => setLoading(false));
   }, []);
 
+  const assignableRoles = roles.filter((role: any) => ["HR_ADMIN", "HR_RECRUITER"].includes(role.key));
+  const roleHint = (key: string) =>
+    key === "HR_ADMIN"
+      ? "Full HR access — everywhere except account reset and the audit log."
+      : "Recruitment workspace: applications, screening, interviews, offers, databank and reports.";
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!form.roleId) {
+      setError("Choose a role: HR Admin or Sub HR.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       await hrApi.createUser({
         name: form.name,
         email: form.email,
-        roleIds: form.roleIds.split(",").map((value) => value.trim()).filter(Boolean),
-        departmentIds: form.departmentIds.split(",").map((value) => value.trim()).filter(Boolean),
+        roleIds: [form.roleId],
+        departmentIds: form.departmentIds,
       });
       setShowCreate(false);
-      setForm({ name: "", email: "", roleIds: "", departmentIds: "" });
-      setMessage("HR user invited successfully.");
+      setForm({ name: "", email: "", roleId: "", departmentIds: [] });
+      setMessage(`Invitation sent to ${form.email}. They always sign in with a one-time code emailed to them.`);
       load();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not invite the user.");
@@ -233,21 +243,23 @@ export default function Users() {
                       {item.isActive ? "Deactivate" : "Activate"}
                     </button>
                   )}
-                  {canReset && (
-                    <>
-                      <button type="button" className="icon-action" onClick={() => resetUser(item)}>
-                        Reset
-                      </button>
-                      {!item.isActive && (
-                        <button type="button" className="icon-action icon-action--success" onClick={() => restoreUser(item)}>
-                          Restore
-                        </button>
-                      )}
-                      <button type="button" className="icon-action" onClick={() => enablePassword(item)}>
-                        Set password
-                      </button>
-                    </>
-                  )}
+                   {canReset && (
+                     <>
+                       <button type="button" className="icon-action" onClick={() => resetUser(item)}>
+                         Reset
+                       </button>
+                       {!item.isActive && (
+                         <button type="button" className="icon-action icon-action--success" onClick={() => restoreUser(item)}>
+                           Restore
+                         </button>
+                       )}
+                       {(item.roles ?? []).some((r: any) => r.role?.key === "IT_ADMIN") && (
+                         <button type="button" className="icon-action" onClick={() => enablePassword(item)}>
+                           Set password
+                         </button>
+                       )}
+                     </>
+                   )}
                 </div>
               </div>
             ))}
@@ -286,15 +298,15 @@ export default function Users() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Add HR user"
-        subtitle="Invite the user, then assign role and department access."
+        subtitle="Creates the account and emails sign-in instructions. HR users always sign in with a one-time code — passwords are not used."
         size="lg"
-        footer={
+         footer={
           <>
             <Button variant="outline" onClick={() => setShowCreate(false)}>
               Cancel
             </Button>
             <Button icon={Mail} type="submit" form="add-hr-form" loading={saving}>
-              Send invitation
+              Create & send invitation
             </Button>
           </>
         }
@@ -314,36 +326,66 @@ export default function Users() {
             onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
           />
           <div className="field field--full">
-            <span className="field__label">Roles</span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {roles.map((role: any) => (
-                <label
-                  key={role.id}
-                  className="flex items-center gap-2 p-2.5 rounded-lg border border-[#171717]/10 hover:bg-[#171717]/[0.03] cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 accent-[#659616]"
-                    checked={form.roleIds.split(",").filter(Boolean).includes(role.id)}
-                    onChange={(event) => {
-                      const ids = form.roleIds.split(",").filter(Boolean);
-                      const next = event.target.checked ? [...ids, role.id] : ids.filter((value) => value !== role.id);
-                      setForm((current) => ({ ...current, roleIds: next.join(",") }));
-                    }}
-                  />
-                  <span className="text-sm ink-body">{role.name}</span>
-                </label>
-              ))}
+            <span className="field__label">Role <span className="text-red-500">*</span></span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {assignableRoles.map((role: any) => {
+                const selected = form.roleId === role.id;
+                return (
+                  <label
+                    key={role.id}
+                    className={`flex flex-col gap-1 p-3 rounded-xl border cursor-pointer transition-colors ${
+                      selected ? "border-[#659616] bg-[#659616]/[0.06] ring-2 ring-[#659616]/40" : "border-[#171717]/10 hover:bg-[#171717]/[0.03]"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="hr-role"
+                        className="w-4 h-4 accent-[#659616]"
+                        checked={selected}
+                        onChange={() => setForm((current) => ({ ...current, roleId: role.id }))}
+                      />
+                      <span className="text-sm font-semibold ink-body">{role.name}</span>
+                    </span>
+                    <span className="text-[11px] ink-soft leading-snug pl-6">{roleHint(role.key)}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
-          <Select
-            className="field--full"
-            label="Department access"
-            value={form.departmentIds}
-            onChange={(event) => setForm((current) => ({ ...current, departmentIds: event.target.value }))}
-            options={departments.map((department: any) => ({ value: department.id, label: department.name }))}
-            placeholder="All departments"
-          />
+          <div className="field field--full">
+            <span className="field__label">
+              Department access
+              <span className="field__optional"> — leave everything unchecked for access to all departments</span>
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-1">
+              {departments.map((department: any) => {
+                const checked = form.departmentIds.includes(department.id);
+                return (
+                  <label
+                    key={department.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                      checked ? "border-[#659616] bg-[#659616]/[0.06]" : "border-[#171717]/10 hover:bg-[#171717]/[0.03]"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-[#659616]"
+                      checked={checked}
+                      onChange={() =>
+                        setForm((current) => ({
+                          ...current,
+                          departmentIds: checked ? current.departmentIds.filter((id) => id !== department.id) : [...current.departmentIds, department.id],
+                        }))
+                      }
+                    />
+                    <span className="text-xs ink-body leading-tight">{department.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-[11px] ink-soft mt-1.5">{form.departmentIds.length === 0 ? "Access to all departments" : `Access limited to ${form.departmentIds.length} department${form.departmentIds.length === 1 ? "" : "s"}`}</p>
+          </div>
         </form>
       </Modal>
     </div>

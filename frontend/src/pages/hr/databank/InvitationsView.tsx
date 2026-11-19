@@ -167,9 +167,9 @@ export default function InvitationsView() {
     setLinkResult(null);
     try {
       if (action === "resend") {
-      const res = await hrApi.generateEmployeeInvitationLink(invitation.id);
+        const res = await hrApi.resendEmployeeInvitation(invitation.id);
         const link = res?.data?.link;
-        setNotice(`Invitation resent to ${invitation.email}.`);
+        setNotice(`Invitation resent to ${invitation.email}. A fresh link was emailed (any previous links no longer work).`);
         if (link) setLinkResult({ id: invitation.id, link });
       } else if (action === "renew") {
         const res = await hrApi.renewEmployeeInvitation(invitation.id);
@@ -177,11 +177,15 @@ export default function InvitationsView() {
         setNotice(`Invitation renewed for ${invitation.email}. The previous link is no longer valid.`);
         if (link) setLinkResult({ id: invitation.id, link });
       } else if (action === "remind") {
-        await hrApi.remindEmployeeInvitation(invitation.id, "reminder");
-        setNotice(`Reminder recorded for ${invitation.email}.`);
+        const res = await hrApi.remindEmployeeInvitation(invitation.id, "reminder");
+        const link = res?.data?.link;
+        setNotice(`Reminder sent to ${invitation.email} with a fresh invitation link.`);
+        if (link) setLinkResult({ id: invitation.id, link });
       } else if (action === "remind_submit") {
-        await hrApi.remindEmployeeInvitation(invitation.id, "submit");
-        setNotice(`Submission reminder recorded for ${invitation.email}.`);
+        const res = await hrApi.remindEmployeeInvitation(invitation.id, "submit");
+        const link = res?.data?.link;
+        setNotice(`Submission reminder sent to ${invitation.email} with a fresh invitation link.`);
+        if (link) setLinkResult({ id: invitation.id, link });
       }
       invalidate(["employee-invitations"]);
     } catch (err: any) {
@@ -196,7 +200,7 @@ export default function InvitationsView() {
     setError("");
     try {
       // The raw token is never stored, so a copy always issues a fresh link.
-      const res = await hrApi.resendEmployeeInvitation(invitation.id);
+      const res = await hrApi.generateEmployeeInvitationLink(invitation.id);
       const link = res?.data?.link;
       if (!link) throw new Error("No link returned by the server.");
       await navigator.clipboard.writeText(link);

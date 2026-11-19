@@ -4,24 +4,7 @@ import { ApiError } from "../utils/ApiError";
 import { verifyAuthToken } from "../utils/jwt";
 import { getCachedAuth, setCachedAuth } from "../lib/authCache";
 import type { AuthContext } from "../types/express";
-
-const SUPER_CONTROLLER_ROLES = ["SUPER_ADMIN", "IT_ADMIN"];
-
-/**
- * Applies the user's per-user overrides (grant/revoke) to the role-derived
- * permission set. SUPER_ADMIN and IT_ADMIN always keep full access.
- */
-function applyOverrides(roles: string[], base: string[], overrides: Array<{ effect: string; permission: { key: string } }>): string[] {
-  const baseSet = new Set(base);
-  if (roles.some((r) => SUPER_CONTROLLER_ROLES.includes(r))) {
-    return Array.from(baseSet);
-  }
-  for (const o of overrides) {
-    if (o.effect === "GRANT") baseSet.add(o.permission.key);
-    else if (o.effect === "REVOKE") baseSet.delete(o.permission.key);
-  }
-  return Array.from(baseSet);
-}
+import { effectivePermissions } from "../lib/permissions";
 
 function extractToken(req: Request): string | null {
   const header = req.headers.authorization;
@@ -74,11 +57,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       if (!user || !user.isActive) throw ApiError.unauthorized("Your account is inactive.");
 
       const roles = user.roles.map((r) => r.role.key);
-      const permissions = applyOverrides(
-        roles,
-        user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.key)),
-        overrides,
-      );
+      const permissions = effectivePermissions(roles, user.roles, overrides);
       context = {
         subjectId: user.id,
         type: "HR",
@@ -162,11 +141,7 @@ export async function optionalAuthenticate(req: Request, _res: Response, next: N
       ]);
       if (user?.isActive) {
         const roles = user.roles.map((r) => r.role.key);
-        const permissions = applyOverrides(
-          roles,
-          user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.key)),
-          ov,
-        );
+        const permissions = effectivePermissions(roles, user.roles, ov);
         req.auth = {
           subjectId: user.id, type: "HR", sessionId: session.id, userId: user.id,
           email: user.email, name: user.name, roles, permissions,

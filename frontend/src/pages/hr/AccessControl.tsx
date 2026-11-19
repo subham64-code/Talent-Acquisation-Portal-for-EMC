@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
 import { useApiQuery } from "../../hooks/useApiQuery";
 import { useAuth } from "../../context/AuthContext";
 import { CONTROLLER_ROLES } from "../../lib/sectionPermissions";
-
-function prettify(key: string) {
-  return key.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export default function AccessControl() {
   const { user: me } = useAuth();
@@ -75,9 +71,6 @@ export default function AccessControl() {
     return saved !== now;
   }, [access, overridesToSave]);
 
-  const grantsCount = overridesToSave.filter((o) => o.effect === "GRANT").length;
-  const revocationsCount = overridesToSave.filter((o) => o.effect === "REVOKE").length;
-
   const toggle = (p: any) => {
     setEffective((prev) => ({ ...prev, [p.id]: !prev[p.id] }));
     setMessage("");
@@ -98,12 +91,12 @@ export default function AccessControl() {
   };
 
   const resetDefaults = async () => {
-    if (!window.confirm("Remove every per-user override for this account? They will inherit their role defaults again.")) return;
+    if (!window.confirm("Put this person's switches back to how their HR role sets them up?")) return;
     setSaving(true);
     setError("");
     try {
       await hrApi.updateUserAccess(selectedId, []);
-      setMessage("Per-user overrides cleared. The user now inherits their role permissions.");
+      setMessage("Switches restored to how their HR role sets them up.");
       await loadAccess(selectedId);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Reset failed.");
@@ -120,7 +113,7 @@ export default function AccessControl() {
       <div className="page-heading">
         <div>
           <h1 className="page-heading__title">Permissions</h1>
-          <p className="page-heading__subtitle">Grant or revoke individual sections and actions for each HR user. Changes apply to their very next request.</p>
+          <p className="page-heading__subtitle">Choose exactly what each HR person may do, in plain words. Everything here is enforced by the system — switch something off and it stops working immediately.</p>
         </div>
       </div>
 
@@ -174,7 +167,7 @@ export default function AccessControl() {
             <div className="py-16 text-center">
               <p className="text-4xl mb-3">🛡️</p>
               <p className="font-bold ink-body">Select an HR user to manage their access</p>
-              <p className="text-xs ink-soft mt-1">Each section and action maps to a real permission enforced by the server on every request.</p>
+              <p className="text-xs ink-soft mt-1">Select a name on the left to see, change and save exactly what that person may do.</p>
             </div>
           ) : loadingAccess ? (
             <div className="space-y-3 py-6">{[...Array(8)].map((_, i) => <div key={i} className="h-10 rounded-lg bg-[#171717]/[0.05] animate-pulse" />)}</div>
@@ -193,8 +186,8 @@ export default function AccessControl() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] uppercase font-bold ink-soft">Per-user overrides</p>
-                  <p className="text-sm font-bold ink-body"><span className="text-[#659616]">{grantsCount} grant{grantsCount === 1 ? "" : "s"}</span> · <span className="text-red-600">{revocationsCount} revocation{revocationsCount === 1 ? "" : "s"}</span></p>
+                  <p className="text-[10px] uppercase font-bold ink-soft">Access enabled</p>
+                  <p className="text-sm font-bold ink-body">{Object.values(effective).filter(Boolean).length} of {access.permissions?.length ?? 0}</p>
                 </div>
               </div>
 
@@ -204,42 +197,56 @@ export default function AccessControl() {
                 </div>
               )}
 
-              <div className="space-y-5 max-h-[62vh] overflow-y-auto pr-1">
-                {grouped.map(([module, perms]) => {
-                  const on = perms.filter((p: any) => effective[p.id]).length;
-                  return (
-                    <section key={module}>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-[11px] font-extrabold uppercase tracking-wider ink-soft">{module}</h4>
-                        <span className="text-[10px] ink-soft font-semibold">{on}/{perms.length} enabled</span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-                        {perms.map((p: any) => {
-                          const enabled = Boolean(effective[p.id]);
-                          const isOverride = p.override !== null;
-                          return (
-                            <button
-                              key={p.id}
-                              role="switch"
-                              aria-checked={enabled}
-                              disabled={targetIsController}
-                              onClick={() => toggle(p)}
-                              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-all ${enabled ? "border-[#659616]/40 bg-[#659616]/5" : "border-[#171717]/10 bg-white"} ${targetIsController ? "opacity-60 cursor-not-allowed" : "hover:border-[#659616]/40"}`}
-                            >
-                              <span className="min-w-0">
-                                <span className="block text-[11px] font-semibold ink-body leading-tight truncate">{p.description || prettify(p.key)}</span>
-                                <span className="block text-[9px] text-[#659616] font-mono truncate">{p.key}{isOverride ? ` · ${p.override === "GRANT" ? "granted" : "revoked"}` : ""}</span>
-                              </span>
-                              <span className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${enabled ? "bg-[#659616]" : "bg-[#171717]/20"}`}>
-                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${enabled ? "left-[18px]" : "left-0.5"}`} />
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  );
-                })}
+              <div className="permission-table-wrapper max-h-[62vh] overflow-auto pr-1">
+                <table className="data-table permission-table">
+                  <thead>
+                    <tr>
+                      <th>What they are allowed to do</th>
+                      <th style={{ textAlign: "right" }}>Allow</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {grouped.map(([module, perms]) => {
+                      const on = perms.filter((p: any) => effective[p.id]).length;
+                      return (
+                        <Fragment key={module}>
+                          <tr className="permission-table__section">
+                            <td colSpan={2}>
+                              <div className="permission-table__section-cell">
+                                <span className="permission-table__section-title">{module}</span>
+                                <span className="permission-table__section-count">{on} of {perms.length} switched on</span>
+                              </div>
+                            </td>
+                          </tr>
+                          {perms.map((p: any) => {
+                            const enabled = Boolean(effective[p.id]);
+                            return (
+                              <tr key={p.id} className={enabled ? undefined : "permission-table__row--off"}>
+                                <td>
+                                  <div className="permission-table__label">{p.label || p.key}</div>
+                                  <div className="permission-table__desc">{p.description}</div>
+                                </td>
+                                <td style={{ textAlign: "right" }}>
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={enabled}
+                                    aria-label={`${p.label || p.key} for ${access?.user?.name ?? "this user"}`}
+                                    disabled={targetIsController}
+                                    onClick={() => toggle(p)}
+                                    className={`permission-switch${enabled ? " permission-switch--on" : ""}`}
+                                  >
+                                    <span className="permission-switch__thumb" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-end border-t border-[#171717]/10 pt-4 mt-4">

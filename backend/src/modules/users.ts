@@ -13,6 +13,7 @@ import { logAudit } from "../services/audit.service";
 import { notifyUser } from "../services/notification.service";
 import { sendTemplateEmail } from "../integrations/email/email.service";
 import { env } from "../config/env";
+import { PERMISSION_META } from "../config/constants";
 
 const router = express.Router();
 
@@ -82,6 +83,17 @@ router.post(
 
     const roles = await prisma.role.findMany({ where: { id: { in: roleIds } } });
     if (roles.length !== roleIds.length) throw ApiError.badRequest("One or more roles are invalid.");
+
+    // HR team accounts can only be assigned the HR Admin or Sub HR roles.
+    // Controllers (SUPER_ADMIN / IT_ADMIN) may assign any role.
+    const callerRoles = req.auth?.roles ?? [];
+    const isController = callerRoles.includes("SUPER_ADMIN") || callerRoles.includes("IT_ADMIN");
+    if (!isController) {
+      const disallowed = roles.filter((r) => !["HR_ADMIN", "HR_RECRUITER"].includes(r.key));
+      if (disallowed.length > 0) {
+        throw ApiError.badRequest("Only HR Admin and Sub HR roles can be assigned from here.");
+      }
+    }
 
     const departments = await prisma.department.findMany({ where: { id: { in: departmentIds } } });
     if (departments.length !== departmentIds.length) throw ApiError.badRequest("One or more departments are invalid.");
@@ -289,7 +301,7 @@ router.post(
   }),
 );
 
-/** Sets or clears a password so the IT administrator can use password sign-in. */
+/** Sets or clears a password so the IT administrator can use password sign-in. HR roles are OTP-only. */
 router.post(
   "/:id/password",
   requirePermission("users.reset"),
@@ -297,8 +309,14 @@ router.post(
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const parsed = z.object({ password: z.string().optional().nullable() }).safeParse(req.body);
     if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: { roles: { include: { role: true } } },
+    });
     if (!user) throw ApiError.notFound("User not found.");
+    // HR roles always sign in with an email OTP. Password sign-in is reserved for IT_ADMIN.
+    const isItAdmin = user.roles.some((r) => r.role.key === "IT_ADMIN");
+    if (!isItAdmin) throw ApiError.badRequest("Password sign-in is not allowed for HR roles. HR accounts always use an emailed code.");
 
     const password = parsed.data.password;
     if (password) {
@@ -381,9 +399,17 @@ function assertAccessController(req: express.Request) {
   }
 }
 
+/** Module label shown on the access screen for a permission key. */
 function groupModule(key: string): string {
-  const prefix = key.split(".")[0] ?? "other";
-  return prefix.charAt(0).toUpperCase() + prefix.slice(1);
+  return PERMISSION_META[key as keyof typeof PERMISSION_META]?.module ?? "Other";
+}
+
+/** Plain-English label/description for a permission key (falls back to a tidied key). */
+function describePermission(key: string): { label: string; description: string } {
+  const meta = PERMISSION_META[key as keyof typeof PERMISSION_META];
+  if (meta) return { label: meta.label, description: meta.description };
+  const tidy = key.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return { label: tidy, description: tidy };
 }
 
 /** Detailed permission matrix for one HR user (role baseline + per-user overrides). */
@@ -412,10 +438,12 @@ router.get(
       const base = baseKeys.has(p.key);
       const override = overrideMap.get(p.key) ?? null;
       const effective = override === "GRANT" ? true : override === "REVOKE" ? false : base;
+      const plain = describePermission(p.key);
       return {
         id: p.id,
         key: p.key,
-        description: p.description,
+        label: plain.label,
+        description: plain.description,
         module: groupModule(p.key),
         base,
         override,

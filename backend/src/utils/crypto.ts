@@ -45,7 +45,16 @@ export function codeFromName(name: string, prefix = ""): string {
   return `${prefix}${initials || "X"}${stamp}`;
 }
 
-/** Password hashing (scrypt) used for the IT administrator password login. */
+/** Auto-generated temporary password emailed on HR account creation. No ambiguous characters. */
+export function generateHrPassword(length = 10): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = crypto.randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i += 1) out += alphabet[bytes[i] % alphabet.length];
+  if (!/[A-Za-z]/.test(out) || !/[0-9]/.test(out)) return generateHrPassword(length);
+  return out;
+}
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
   const derived = crypto.scryptSync(password, salt, 64).toString("hex");

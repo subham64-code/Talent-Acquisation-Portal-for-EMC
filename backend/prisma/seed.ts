@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { env } from "../src/config/env";
 import { codeFromName, hashPassword } from "../src/utils/crypto";
-import { ROLE_PERMISSIONS, ROLES, ALL_PERMISSIONS, DEFAULT_DEPARTMENTS, DEFAULT_EMPLOYMENT_TYPES, DOCUMENT_CATEGORIES, EMAIL_TEMPLATE_KEYS } from "../src/config/constants";
+import { ROLE_PERMISSIONS, ROLES, ALL_PERMISSIONS, DEFAULT_DEPARTMENTS, DEFAULT_EMPLOYMENT_TYPES, DOCUMENT_CATEGORIES, EMAIL_TEMPLATE_KEYS, ROLE_NAMES, PERMISSION_META } from "../src/config/constants";
 
 const prisma = new PrismaClient();
 
@@ -10,11 +10,13 @@ async function main() {
 
   // Permissions
   for (const key of ALL_PERMISSIONS) {
-    await prisma.permission.upsert({ where: { key }, update: {}, create: { key, description: key } });
+    const description = PERMISSION_META[key]?.description ?? key;
+    await prisma.permission.upsert({ where: { key }, update: { description }, create: { key, description } });
   }
 
   // Roles
-  for (const [key, name] of Object.entries(ROLES)) {
+  for (const key of Object.values(ROLES)) {
+    const name = ROLE_NAMES[key as keyof typeof ROLE_NAMES] ?? key;
     await prisma.role.upsert({
       where: { key },
       update: { name },

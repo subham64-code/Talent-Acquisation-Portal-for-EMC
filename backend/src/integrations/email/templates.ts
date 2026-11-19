@@ -220,6 +220,69 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
       });
       break;
 
+    case "employee_update_reminder": {
+      const completion = s(data, "completion", "");
+      const purpose = s(data, "purpose", "reminder");
+      subject = purpose === "submit"
+        ? "Reminder: please submit your EMC employee profile"
+        : "Reminder: please update your EMC employee profile";
+      html = layout({
+        title: `Hello ${esc(name)}, this is a reminder to update your employee profile`,
+        eyebrow: "Employee Profile Reminder",
+        preheader: "Your personal employee-information link is ready.",
+        body:
+          p(
+            `EMC is building a <strong>centralised CV databank</strong> for our employees. Our records show your profile is <strong>${completion ? `${esc(completion)}% complete` : "not yet complete"}</strong>.`,
+          ) +
+          detailTable([
+            ["Employee ID", data.employeeCode],
+            ["Official Email", data.email],
+            ["Profile completion", completion ? `${esc(completion)}%` : "Not started"],
+          ]) +
+          p(`<strong>This secure link never expires.</strong> Use the button below to open the update page. Please note that a fresh link was generated for this reminder — earlier links are no longer valid.`) +
+          p(`<strong>No sign-in or HR account is required.</strong> If the button does not work, copy and paste this URL into your browser:<br />${esc(s(data, "link"))}`),
+        ctaLabel: "Update my information",
+        ctaUrl: s(data, "link"),
+        ctaColor: "green",
+        footnote: "If you received this email in error, please contact the HR team. This message contains confidential company information.",
+      });
+      break;
+    }
+
+    case "employee_update_changes_requested": {
+      const items = Array.isArray(data.notes) ? (data.notes as Array<{ label?: unknown; note?: unknown }>) : [];
+      const rows = items
+        .map(
+          (item, i) =>
+            `<tr style="background:${i % 2 ? "#FAFBFA" : "#FFFFFF"}"><td style="padding:11px 14px;font-family:Segoe UI,Inter,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:${BRAND.muted};width:44%">${esc(item?.label)}</td><td style="padding:11px 14px;font-family:Segoe UI,Inter,Arial,sans-serif;font-size:13px;font-weight:600;color:${BRAND.ink}">${esc(item?.note || "Please review and correct this field")}</td></tr>`,
+        )
+        .join("");
+      const changesTable = rows
+        ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;border:1px solid #E6EBE8;border-radius:12px;overflow:hidden">${rows}</table>`
+        : "";
+      const introMessage = s(data, "message", "Our HR team reviewed your submission and marked a few items that need correction before it can be applied:");
+      subject = "Action required: correct your EMC employee profile";
+      html = layout({
+        title: `Hello ${esc(name)}, HR requested a few corrections`,
+        eyebrow: "Correction Requested",
+        preheader: "Please fix the highlighted items and resubmit your employee profile.",
+        body:
+          p(esc(introMessage)) +
+          changesTable +
+          detailTable([
+            ["Employee ID", data.employeeCode],
+            ["Official Email", data.email],
+          ]) +
+          p(`<strong>The secure link never expires.</strong> Use the button below to open the update page and submit the corrected information. A fresh link was generated for this request — earlier links are no longer valid.`) +
+          p(`<strong>No sign-in or HR account is required.</strong> If the button does not work, copy and paste this URL into your browser:<br />${esc(s(data, "link"))}`),
+        ctaLabel: "Update my information",
+        ctaUrl: s(data, "link"),
+        ctaColor: "green",
+        footnote: "If you received this email in error, please contact the HR team. This message contains confidential company information.",
+      });
+      break;
+    }
+
     case "employee_update_confirmation":
       subject = "Your EMC employee profile has been updated";
       html = layout({
@@ -533,21 +596,27 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
       });
       break;
 
-    case "hr_invitation":
+    case "hr_invitation": {
+      const tempPassword = s(data, "password", "");
       subject = "You have been invited to the EMC Talent Acquisition Portal";
       html = layout({
         title: "Welcome to the EMC HR team",
         eyebrow: "HR Portal Invitation",
-        preheader: "You have been invited to the EMC Talent Acquisition Portal.",
+        preheader: "Your EMC HR portal account is ready.",
         body:
           p(`Hello ${esc(name)},`) +
           p(`You have been invited to join the EMC Talent Acquisition Portal as <strong>${esc(s(data, "roleName", "an HR user"))}</strong>.`) +
-          p(`Sign in with this email address using a one-time password — no password setup is required.`),
+          (tempPassword
+            ? detailTable([["Work email", data.email], ["Temporary password", tempPassword]]) +
+              p(`Use the temporary password above with your work email to sign in. You may be asked to change it after your first sign-in. A one-time sign-in code by email is also available as an alternative.`) +
+              p(`<strong>Keep this password private.</strong> If it does not work, use the OTP option on the login page or contact the IT administrator.`)
+            : p(`Sign in with this email address using a one-time password — no password setup is required.`)),
         ctaLabel: "Open HR portal",
         ctaUrl: s(data, "link", `${appUrl}/hr/login`),
         ctaColor: "green",
       });
       break;
+    }
 
     case "hr_otp":
       subject = `${s(data, "code", "")} is your EMC HR login code`;
@@ -568,16 +637,18 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
       break;
 
     case "hr_notification":
-    default:
+    default: {
+      const link = s(data, "link", "");
       subject = s(data, "subject", "EMC Talent Acquisition notification");
       html = layout({
         title: s(data, "title", "EMC Talent Acquisition Portal"),
         eyebrow: "Notification",
         body: p(esc(s(data, "message", "You have a new notification in the HR portal."))),
-        ctaLabel: "Open HR portal",
-        ctaUrl: s(data, "link", `${appUrl}/hr`),
+        ctaLabel: link ? s(data, "ctaLabel", "Open link") : undefined,
+        ctaUrl: link || undefined,
       });
       break;
+    }
   }
 
   const text = html

@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { ok, created } from "../utils/http";
+import { effectivePermissions } from "../lib/permissions";
 import { generateOtp, hashSecret, randomToken, verifySecret, verifyPassword, sha256, contentDispositionFilename } from "../utils/crypto";
 import { signAuthToken, verifyAuthToken } from "../utils/jwt";
 import { authenticate, optionalAuthenticate, requireAuth, requireHr, requirePermission, departmentScope } from "../middleware/auth";
@@ -98,7 +99,7 @@ router.post("/auth/hr/otp/request",
     const email = parsed.data;
 
     const user = await prisma.user.findUnique({ where: { email }, include: { roles: { include: { role: true } } } });
-    if (!user || !user.isActive || !user.roles.some((r) => r.role.key === "HR_ADMIN" || r.role.key === "SUPER_ADMIN")) {
+    if (!user || !user.isActive || !user.roles.some((r) => ["SUPER_ADMIN", "IT_ADMIN", "HR_ADMIN", "HR_RECRUITER"].includes(r.role.key))) {
       throw ApiError.forbidden("This email is not authorized for HR access.");
     }
 
@@ -147,7 +148,7 @@ router.post("/auth/hr/otp/verify",
       throw ApiError.unauthorized("Invalid OTP code. Please try again.");
     }
 
-    const [, user] = await Promise.all([
+    const [, user, overrides] = await Promise.all([
       prisma.otpVerification.update({ where: { id: record.id }, data: { consumedAt: new Date() } }),
       prisma.user.findUnique({
         where: { email },
@@ -156,6 +157,7 @@ router.post("/auth/hr/otp/verify",
           departments: true,
         },
       }),
+      prisma.userPermissionOverride.findMany({ where: { user: { email } }, include: { permission: { select: { key: true } } } }),
     ]);
     if (!user || !user.isActive) throw ApiError.forbidden("Your account is not active.");
 
@@ -176,7 +178,7 @@ router.post("/auth/hr/otp/verify",
 
     setSessionCookie(res, token);
     const roles = user.roles.map((r) => r.role.key);
-    const permissions = Array.from(new Set(user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.key))));
+    const permissions = effectivePermissions(roles, user.roles, overrides);
     return ok(res, {
       token,
       user: { id: user.id, email: user.email, name: user.name, type: "HR" as const, roles, permissions, departments: user.departments.map((d) => d.departmentId) },
@@ -185,8 +187,9 @@ router.post("/auth/hr/otp/verify",
 );
 
 /**
- * Password based sign-in. Reserved for accounts that have a password configured
- * (IT administrators), so they can recover access if the HR email flow is blocked.
+ * Password based sign-in. Reserved strictly for IT administrators as a
+ * break-glass option when email delivery is blocked. Every HR role
+ * (Main Controller, HR Admin, Sub HR) always signs in with an email OTP.
  */
 router.post("/auth/password/login", authRateLimiter, asyncHandler(async (req, res) => {
   const parsed = z
@@ -200,11 +203,16 @@ router.post("/auth/password/login", authRateLimiter, asyncHandler(async (req, re
     include: { roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } }, departments: true },
   });
   if (!user || !user.isActive) throw ApiError.unauthorized("Invalid email or password.");
+  if (!user.roles.some((r) => r.role.key === "IT_ADMIN")) {
+    throw ApiError.unauthorized("Password sign-in is not available for this account. Use the one-time code sent to your email.");
+  }
   if (!user.passwordHash) throw ApiError.unauthorized("Password sign-in is not enabled for this account.");
   if (!verifyPassword(password, user.passwordHash)) {
     await logAudit(req, { action: "LOGIN_PASSWORD_FAILED", entityType: "User", entityId: user.id, actorEmail: email });
     throw ApiError.unauthorized("Invalid email or password.");
   }
+
+  const overrides = await prisma.userPermissionOverride.findMany({ where: { userId: user.id }, include: { permission: { select: { key: true } } } });
 
   const session = await createSession("HR", user.id, req);
   const token = signAuthToken({ sub: user.id, type: "HR", sid: session.id });
@@ -222,19 +230,23 @@ router.post("/auth/password/login", authRateLimiter, asyncHandler(async (req, re
 
   setSessionCookie(res, token);
   const roles = user.roles.map((r) => r.role.key);
-  const permissions = Array.from(new Set(user.roles.flatMap((r) => r.role.permissions.map((p) => p.permission.key))));
+  const permissions = effectivePermissions(roles, user.roles, overrides);
   return ok(res, {
     token,
     user: { id: user.id, email: user.email, name: user.name, type: "HR" as const, roles, permissions, departments: user.departments.map((d) => d.departmentId) },
   });
 }));
 
-/** Reports whether password sign-in is available for an email (used by the login screen). */
+/** Reports whether password sign-in is available for an email (IT administrators only). Used by the login screen. */
 router.post("/auth/password/available", authRateLimiter, asyncHandler(async (req, res) => {
   const parsed = emailSchema.safeParse(req.body.email);
   if (!parsed.success) return ok(res, { available: false });
-  const user = await prisma.user.findUnique({ where: { email: parsed.data }, select: { passwordHash: true, isActive: true } });
-  return ok(res, { available: Boolean(user?.passwordHash && user?.isActive) });
+  const user = await prisma.user.findUnique({
+    where: { email: parsed.data },
+    select: { passwordHash: true, isActive: true, roles: { select: { role: { select: { key: true } } } } },
+  });
+  const isItAdmin = user?.roles.some((r) => r.role.key === "IT_ADMIN") ?? false;
+  return ok(res, { available: Boolean(user?.passwordHash && user?.isActive && isItAdmin) });
 }));
 
 router.post("/auth/me", optionalAuthenticate, asyncHandler(async (req, res) => {
@@ -338,6 +350,8 @@ router.get(
         source: draft ? "draft" : submittedFields ? "submission" : null,
         cv,
         status: invitation.status,
+        rejection: invitation.submissionRejection ?? null,
+        fieldReview: (invitation.submission as { fieldReview?: Array<{ key?: string; label: string; note?: string }> } | null)?.fieldReview ?? null,
       });
   }),
 );

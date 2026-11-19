@@ -40,6 +40,45 @@ export const PERMISSIONS = {
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
+/**
+ * Plain-English catalogue for the access screen: what the permission lets an
+ * HR user do, in words a non-technical person understands, plus the module it
+ * belongs to. Keep descriptions short and action-focused.
+ */
+export interface PermissionMeta {
+  label: string;
+  description: string;
+  module: string;
+}
+export const PERMISSION_META: Record<PermissionKey, PermissionMeta> = {
+  [PERMISSIONS.DASHBOARD_VIEW]: { label: "Open the HR dashboard", description: "See the main HR overview — hiring numbers, pending work and team activity at a glance.", module: "Dashboard" },
+  [PERMISSIONS.EMPLOYEES_VIEW]: { label: "View employee records", description: "Open the employee databank and look up any employee's details.", module: "Employee Databank" },
+  [PERMISSIONS.EMPLOYEES_MANAGE]: { label: "Add & edit employees", description: "Create new employee records, edit their details, upload or remove CVs and send profile invitations.", module: "Employee Databank" },
+  [PERMISSIONS.CANDIDATES_VIEW]: { label: "View candidates", description: "Open candidate applications and read CVs and other submitted details.", module: "Candidates" },
+  [PERMISSIONS.CANDIDATES_MANAGE]: { label: "Shortlist & move candidates", description: "Shortlist, hold, reject or move candidates through the hiring stages.", module: "Candidates" },
+  [PERMISSIONS.OPENINGS_VIEW]: { label: "View job openings", description: "See job openings for the company, including drafts and published roles.", module: "Job Openings" },
+  [PERMISSIONS.OPENINGS_MANAGE]: { label: "Create & publish openings", description: "Create, edit, publish, close or archive job openings and their descriptions.", module: "Job Openings" },
+  [PERMISSIONS.APPLICATIONS_VIEW]: { label: "View applications", description: "Open applications received for any opening and see where each one stands.", module: "Applications" },
+  [PERMISSIONS.APPLICATIONS_MANAGE]: { label: "Move applications forward", description: "Advance or return applications between stages (applied, screening, interview, offer) and add remarks.", module: "Applications" },
+  [PERMISSIONS.AI_VIEW]: { label: "View AI screening results", description: "Read AI match scores, rankings and the reasons behind them.", module: "AI Screening" },
+  [PERMISSIONS.AI_RUN]: { label: "Run AI screening", description: "Start or rerun AI screening — scores and rankings are generated for an opening.", module: "AI Screening" },
+  [PERMISSIONS.INTERVIEWS_VIEW]: { label: "View interviews", description: "Open the interview calendar, interview details and recorded feedback.", module: "Interviews" },
+  [PERMISSIONS.INTERVIEWS_MANAGE]: { label: "Schedule & record interviews", description: "Schedule, reschedule and cancel interviews, and record feedback and results.", module: "Interviews" },
+  [PERMISSIONS.OFFERS_VIEW]: { label: "View offers", description: "Open offer letters and see their status and history.", module: "Offers" },
+  [PERMISSIONS.OFFERS_MANAGE]: { label: "Create & send offers", description: "Create, approve, send and track offer and appointment letters.", module: "Offers" },
+  [PERMISSIONS.DOCUMENTS_VIEW]: { label: "View documents", description: "Open documents uploaded by employees and candidates.", module: "Documents" },
+  [PERMISSIONS.DOCUMENTS_MANAGE]: { label: "Verify & manage documents", description: "Verify, reject or request re-upload of documents.", module: "Documents" },
+  [PERMISSIONS.DATABANK_VIEW]: { label: "Open the CV databank", description: "Open the full CV databank — profiles, employment history and uploaded files.", module: "Employee Databank" },
+  [PERMISSIONS.DATABANK_MANAGE]: { label: "Edit the CV databank", description: "Edit databank records — add CV versions, update employment history and manage files.", module: "Employee Databank" },
+  [PERMISSIONS.REPORTS_VIEW]: { label: "View reports", description: "Open recruitment and HR reports and download them.", module: "Reports" },
+  [PERMISSIONS.NOTIFICATIONS_VIEW]: { label: "View notifications", description: "Read the notification feed and the list of emails that were sent.", module: "Notifications" },
+  [PERMISSIONS.USERS_MANAGE]: { label: "Manage the HR team", description: "Add HR team members, activate or deactivate accounts and set passwords.", module: "HR Team & Access" },
+  [PERMISSIONS.USERS_RESET]: { label: "Reset HR accounts", description: "Revoke sessions and reset HR accounts (IT Administrator / Main Controller only).", module: "HR Team & Access" },
+  [PERMISSIONS.SETTINGS_MANAGE]: { label: "Change portal settings", description: "Change portal settings such as AI scoring weights and mail configuration.", module: "Settings" },
+  [PERMISSIONS.DEPARTMENTS_MANAGE]: { label: "Manage departments", description: "Create and edit departments and assign employees to them.", module: "Settings" },
+  [PERMISSIONS.AUDIT_VIEW]: { label: "View the audit log", description: "See who did what across the portal, and when (Main Controller / IT Administrator only).", module: "Audit Log" },
+};
+
 export const ALL_PERMISSIONS: PermissionKey[] = Object.values(PERMISSIONS);
 
 export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
@@ -87,7 +126,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
 export const ROLE_NAMES: Record<RoleKey, string> = {
   SUPER_ADMIN: "HR Department (Main Controller)",
   HR_ADMIN: "HR Admin",
-  HR_RECRUITER: "HR Recruiter",
+  HR_RECRUITER: "Sub HR",
   DEPARTMENT_MANAGER: "Department Manager",
   INTERVIEWER: "Interviewer",
   IT_ADMIN: "IT Administrator",
@@ -219,6 +258,8 @@ export const FILE_VISIBILITY = {
 
 export const EMAIL_TEMPLATE_KEYS = [
   "employee_update_invitation",
+  "employee_update_reminder",
+  "employee_update_changes_requested",
   "employee_update_confirmation",
   "candidate_email_otp",
   "application_confirmation",

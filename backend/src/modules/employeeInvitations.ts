@@ -40,6 +40,25 @@ const SCALAR_FIELDS = [
   "previousOrganization","specialization","employmentTypeId","workLocation","additionalInfo","totalExperience","relevantExperience","joiningDate",
 ] as const;
 
+const FIELD_LABELS: Record<string, string> = {
+  fullName: "Full Name",
+  officialEmail: "Official Email",
+  personalEmail: "Personal Email",
+  mobile: "Contact Number",
+  departmentId: "Department",
+  designationId: "Designation",
+  employmentTypeId: "Employment Type",
+  joiningDate: "Joining Date",
+  workLocation: "Work Location",
+  qualification: "Qualification",
+  graduationYear: "Passing Year",
+  specialization: "Specialization",
+  totalExperience: "Total Experience (years)",
+  relevantExperience: "Relevant Experience (years)",
+  previousOrganization: "Previous Organization",
+  additionalInfo: "Additional Information",
+};
+
 function scalarEmployeeData(fields: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const key of SCALAR_FIELDS) {
@@ -243,7 +262,7 @@ router.get(
     });
     if (!inv) throw ApiError.notFound("Invitation not found.");
     const submission = inv.submission as { fields?: SubmissionFields; fileId?: string; submittedAt?: string } | null;
-    return ok(res, { invitation: present(inv), submission: submission ?? null, draft: inv.draft ?? null });
+    return ok(res, { invitation: present(inv), submission: submission ?? null, draft: inv.draft ?? null, current: snapshotEmployee(inv.employee) });
   }),
 );
 
@@ -309,29 +328,24 @@ router.post(
     if (!inv) throw ApiError.notFound("Invitation not found.");
     const fields = fieldsOf(inv);
     const completion = completionOf(fields);
-    await prisma.employeeInviteReminder.create({
-      data: { invitationId: id, purpose: body.purpose, profileCompletion: completion, renewedToken: false },
-    });
+    const token = randomToken();
+    const now = new Date();
     await prisma.employeeUpdateInvitation.update({
       where: { id },
-      data: { reminderCount: (inv.reminderCount ?? 0) + 1, lastReminderSentAt: new Date() },
+      data: { tokenHash: sha256(token), expiresAt: null, status: "SENT", reminderCount: (inv.reminderCount ?? 0) + 1, lastReminderSentAt: now },
     });
-    const subject = body.purpose === "submit"
-      ? "Reminder to submit your Ecometrix profile"
-      : "Reminder to complete your Ecometrix employee profile";
+    await prisma.employeeInviteReminder.create({
+      data: { invitationId: id, purpose: body.purpose, profileCompletion: completion, renewedToken: true, sentAt: now },
+    });
+    const link = `${env.appUrl}/employee/update?token=${token}`;
     void sendTemplateEmail({
       to: inv.employee.officialEmail,
-      templateKey: "hr_notification",
-      data: {
-        name: inv.employee.fullName,
-        title: subject,
-        message: `Your employee profile is ${completion}% complete. Please open your invitation link and finish the remaining sections as soon as possible.`,
-        link: `${env.appUrl}/employee/update`,
-      },
-      metadata: { invitationId: id, employeeId: inv.employeeId, reminderPurpose: body.purpose },
+      templateKey: "employee_update_reminder",
+      data: { name: inv.employee.fullName, employeeCode: inv.employee.employeeCode, email: inv.employee.officialEmail, link, completion, purpose: body.purpose },
+      metadata: { invitationId: id, employeeId: inv.employeeId, reminderPurpose: body.purpose, renewedToken: true },
     });
     await logAudit(req, { action: "EMPLOYEE_INVITE_REMIND", entityType: "EmployeeUpdateInvitation", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { purpose: body.purpose, completion } });
-    return ok(res, { message: "Reminder recorded and email queued.", profileCompletion: completion });
+    return ok(res, { message: "Reminder sent with a fresh invitation link.", profileCompletion: completion, link });
   }),
 );
 
@@ -530,6 +544,59 @@ router.post(
     });
     await logAudit(req, { action: "EMPLOYEE_SUBMISSION_REJECT", entityType: "EmployeeUpdateInvitation", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { reason: body.reason } });
     return ok(res, { message: "Submission rejected. The employee can resubmit with the same invitation link." });
+  }),
+);
+
+const requestChangesBody = z.object({
+  notes: z.array(z.object({ key: z.string().min(1).max(60), note: z.string().trim().max(500).optional().nullable() })).min(1).max(50),
+  message: z.string().trim().max(1000).optional().nullable(),
+});
+
+router.post(
+  "/employee-submissions/:id/request-changes",
+  requirePermission("employees.manage"),
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = requestChangesBody.parse(req.body);
+    const inv = await prisma.employeeUpdateInvitation.findUnique({ where: { id }, include: { employee: true } });
+    if (!inv) throw ApiError.notFound("Submission not found.");
+    if (!inv.usedAt && !inv.submission) throw ApiError.badRequest("This invitation has no submission to review.");
+    const items = body.notes.map((note) => ({ key: note.key, label: FIELD_LABELS[note.key] ?? note.key, note: (note.note ?? "").trim() }));
+    const intro = body.message?.trim() ? `${body.message.trim()}\n` : "";
+    const rejectionText = intro + items.map((item) => (item.note ? `${item.label}: ${item.note}` : item.label)).join("\n");
+    const token = randomToken();
+    const previousSubmission = (inv.submission ?? {}) as Record<string, unknown>;
+    const updatedSubmission = { ...previousSubmission, fieldReview: items, changesRequestedAt: new Date().toISOString(), changesRequestedById: req.auth!.subjectId };
+    await prisma.employeeUpdateInvitation.update({
+      where: { id },
+      data: {
+        submissionStatus: "REJECTED",
+        submissionRejection: rejectionText,
+        reviewedAt: new Date(),
+        reviewedById: req.auth!.subjectId,
+        status: "REJECTED",
+        usedAt: null,
+        tokenHash: sha256(token),
+        expiresAt: null,
+        submission: updatedSubmission as any,
+      },
+    });
+    const link = `${env.appUrl}/employee/update?token=${token}`;
+    void sendTemplateEmail({
+      to: inv.employee.officialEmail,
+      templateKey: "employee_update_changes_requested",
+      data: {
+        name: inv.employee.fullName,
+        employeeCode: inv.employee.employeeCode,
+        email: inv.employee.officialEmail,
+        link,
+        notes: items,
+        message: body.message?.trim() ?? "",
+      },
+      metadata: { invitationId: id, employeeId: inv.employeeId, reminderPurpose: "changes_requested", renewedToken: true },
+    });
+    await logAudit(req, { action: "EMPLOYEE_SUBMISSION_REQUEST_CHANGES", entityType: "EmployeeUpdateInvitation", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { employeeId: inv.employeeId, notes: items } });
+    return ok(res, { message: "Correction request sent to the employee with a fresh link.", link });
   }),
 );
 

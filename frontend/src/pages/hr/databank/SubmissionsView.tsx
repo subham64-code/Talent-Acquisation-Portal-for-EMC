@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, CheckCircle2, Download, Eye, FileText, Mail, Undo2, XCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CalendarClock, CheckCircle2, Download, Eye, ExternalLink, FileText, Mail, Undo2, XCircle } from "lucide-react";
 import DataTable, { type Column } from "../../../components/DataTable";
 import Badge from "../../../components/ref/Badge";
 import PageHeader from "../../../components/ref/PageHeader";
@@ -43,6 +44,7 @@ const FIELD_LABELS: Array<{ key: string; label: string; kind?: "date" | "number"
 
 export default function SubmissionsView({ departments, designations, employmentTypes }: { departments: any[]; designations: any[]; employmentTypes: any[] }) {
   const invalidate = useInvalidate();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [review, setReview] = useState<any>(null);
@@ -50,6 +52,10 @@ export default function SubmissionsView({ departments, designations, employmentT
   const [rejecting, setRejecting] = useState(false);
   const [removeValidating, setRemoveValidating] = useState<any>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [openRecordId, setOpenRecordId] = useState<string | null>(null);
+  const [freshLink, setFreshLink] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -57,6 +63,27 @@ export default function SubmissionsView({ departments, designations, employmentT
   const departmentName = useMemo(() => Object.fromEntries(departments.map((d: any) => [d.id, d.name])), [departments]);
   const designationName = useMemo(() => Object.fromEntries(designations.map((d: any) => [d.id, d.name])), [designations]);
   const employmentTypeName = useMemo(() => Object.fromEntries(employmentTypes.map((d: any) => [d.id, d.name])), [employmentTypes]);
+
+  const fieldValue = (field: (typeof FIELD_LABELS)[number], value: any): string => {
+    if (value === undefined || value === null || value === "") return "—";
+    if (field.key === "departmentId") return departmentName[value] || String(value);
+    if (field.key === "designationId") return designationName[value] || String(value);
+    if (field.key === "employmentTypeId") return employmentTypeName[value] || String(value);
+    if (field.kind === "date" && !Number.isNaN(new Date(String(value)).getTime())) {
+      return new Date(String(value)).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    }
+    return String(value);
+  };
+  const normalizeForCompare = (key: string, value: any): string => {
+    if (key === "joiningDate") {
+      const d = new Date(String(value ?? ""));
+      return Number.isNaN(d.getTime()) ? String(value ?? "") : d.toISOString().slice(0, 10);
+    }
+    return String(value ?? "");
+  };
+  const isChanged = (field: (typeof FIELD_LABELS)[number], submitted: any, current: any): boolean =>
+    normalizeForCompare(field.key, submitted) !== normalizeForCompare(field.key, current);
+  const wrongCount = FIELD_LABELS.filter((field) => flags[field.key]).length;
 
   const { data: submissions = [], isLoading } = useApiQuery<any[]>(
     ["employee-submissions", { search, status }],
@@ -71,8 +98,12 @@ export default function SubmissionsView({ departments, designations, employmentT
       setReviewDetail(null);
       setRejecting(false);
       setRejectionReason("");
+      setFlags({});
+      setNotes({});
       return;
     }
+    setFlags({});
+    setNotes({});
     let cancelled = false;
     hrApi.employeeInvitation(review.id)
       .then((res: any) => { if (!cancelled) setReviewDetail(res?.data ?? res); })
@@ -88,9 +119,13 @@ export default function SubmissionsView({ departments, designations, employmentT
   const validate = async (submission: any) => {
     setBusyId(submission.id);
     setError("");
+    setOpenRecordId(null);
+    setFreshLink(null);
     try {
-      await hrApi.validateEmployeeSubmission(submission.id);
+      const res = await hrApi.validateEmployeeSubmission(submission.id);
+      const updatedId = (res as any)?.data?.employeeId ?? submission.employeeId;
       setNotice(`${submission.employeeName}'s submission was validated and the employee record was updated.`);
+      setOpenRecordId(updatedId ?? null);
       setReview(null);
       invalidate(["employee-submissions", "employees", "employee", "employee-invitations", "dashboard"]);
     } catch (err: any) {
@@ -100,10 +135,33 @@ export default function SubmissionsView({ departments, designations, employmentT
     }
   };
 
+  const requestChanges = async (submission: any) => {
+    const flagged = FIELD_LABELS.filter((field) => flags[field.key]).map((field) => ({ key: field.key, note: (notes[field.key] ?? "").trim() || null }));
+    if (flagged.length === 0) return;
+    setBusyId(submission.id);
+    setError("");
+    setOpenRecordId(null);
+    setFreshLink(null);
+    try {
+      const res = await hrApi.requestEmployeeChanges(submission.id, { notes: flagged });
+      const link = (res as any)?.data?.link;
+      setNotice(`Correction request sent to ${submission.email} for ${flagged.length} field${flagged.length === 1 ? "" : "s"}. A fresh link was emailed (any previous links no longer work).`);
+      setFreshLink(link ?? null);
+      setReview(null);
+      invalidate(["employee-submissions", "employees", "employee-invitations", "dashboard"]);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || "The correction request could not be sent.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const unvalidate = async (submission: any) => {
     if (!submission?.id) return;
     setBusyId(submission.id);
     setError("");
+    setOpenRecordId(null);
+    setFreshLink(null);
     try {
       await hrApi.unvalidateEmployeeSubmission(submission.id);
       setNotice(`Validation removed for ${submission.employeeName}. The submission is back in the validation queue and the previous record was restored.`);
@@ -120,6 +178,8 @@ export default function SubmissionsView({ departments, designations, employmentT
   const reject = async (submission: any) => {
     setBusyId(submission.id);
     setError("");
+    setOpenRecordId(null);
+    setFreshLink(null);
     try {
       await hrApi.rejectEmployeeSubmission(submission.id, rejectionReason.trim() || undefined);
       setNotice(`${submission.employeeName}'s submission was rejected. The invitation was reopened for correction.`);
@@ -194,7 +254,24 @@ export default function SubmissionsView({ departments, designations, employmentT
         <div className="notice__body"><div className="notice__title">{pendingCount} submission{pendingCount === 1 ? "" : "s"} awaiting HR validation</div>Open a submission to inspect the full profile and CV. A confirmation is required before saving a validated employee record. If a submission was validated by mistake, use "Remove validation" to revert it.</div>
       </div>
 
-      {notice && <div className="notice notice--success" role="status"><div className="notice__body">{notice}</div></div>}
+      {notice && (
+        <div className="notice notice--success" role="status">
+          <div className="notice__body">
+            {notice}
+            {openRecordId && (
+              <div style={{ marginTop: "0.5rem" }}>
+                <button className="btn btn--outline btn--sm" onClick={() => navigate(`/hr/employees/${openRecordId}`)}><ExternalLink size={14} /> Open employee record</button>
+              </div>
+            )}
+            {freshLink && (
+              <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <input className="input" style={{ maxWidth: 420 }} value={freshLink} readOnly onFocus={(e) => e.target.select()} />
+                <a className="btn btn--outline btn--sm" href={freshLink} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {error && <div className="notice notice--error" role="alert"><div className="notice__body">{error}</div></div>}
 
       <DatabankToolbar
@@ -232,6 +309,7 @@ export default function SubmissionsView({ departments, designations, employmentT
             {review.status === "PENDING" && !rejecting && (
               <>
                 <Button variant="danger-ghost" icon={XCircle} onClick={() => setRejecting(true)}>Reject</Button>
+                <Button variant="outline" icon={Mail} onClick={() => requestChanges(review)} loading={busyId === review.id} disabled={wrongCount === 0}>Request changes{wrongCount ? ` (${wrongCount})` : ""}</Button>
                 <Button icon={CheckCircle2} onClick={() => validate(review)} loading={busyId === review.id}>Validate Submission</Button>
               </>
             )}
@@ -280,19 +358,24 @@ export default function SubmissionsView({ departments, designations, employmentT
         {review && (
           <div className="card" style={{ marginTop: "1rem" }}>
             <div className="card__body">
-              <div className="detail-grid detail-grid--3">
+              <div className="review-diff__head"><span>Field</span><span>Current record</span><span>Submitted</span><span>{review.status === "PENDING" ? "Flag" : ""}</span></div>
+              <div className="review-diff">
                 {FIELD_LABELS.map((field) => {
-                  const value = review.fields?.[field.key];
-                  if (value === undefined || value === null || value === "") return null;
-                  let display: string = String(value);
-                  if (field.key === "departmentId") display = departmentName[value] || value;
-                  else if (field.key === "designationId") display = designationName[value] || value;
-                  else if (field.key === "employmentTypeId") display = employmentTypeName[value] || value;
-                  else if (field.kind === "date" && !Number.isNaN(new Date(String(value)).getTime())) display = new Date(String(value)).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+                  const submitted = review.fields?.[field.key];
+                  const current = reviewDetail?.current?.[field.key];
+                  const flagged = Boolean(flags[field.key]);
+                  const changed = isChanged(field, submitted, current);
                   return (
-                    <div className="detail-item" key={field.key}>
-                      <div className="detail-item__label">{field.label}</div>
-                      <div className="detail-item__value">{display}</div>
+                    <div className={`review-diff__row${changed ? " review-diff__row--changed" : ""}${flagged ? " review-diff__row--flagged" : ""}`} key={field.key}>
+                      <div className="review-diff__label">{field.label}</div>
+                      <div className="review-diff__value review-diff__value--current">{fieldValue(field, current)}</div>
+                      <div className="review-diff__value">{fieldValue(field, submitted)}</div>
+                      {review.status === "PENDING"
+                        ? <label className="review-diff__flag"><input type="checkbox" checked={flagged} onChange={(e) => setFlags((c) => ({ ...c, [field.key]: e.target.checked }))} /> Correction</label>
+                        : <span />}
+                      {flagged && review.status === "PENDING" && (
+                        <input className="input review-diff__note" placeholder="What should change? (optional)" value={notes[field.key] ?? ""} onChange={(e) => setNotes((c) => ({ ...c, [field.key]: e.target.value }))} />
+                      )}
                     </div>
                   );
                 })}

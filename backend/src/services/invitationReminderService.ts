@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma";
 import { sendTemplateEmail } from "../integrations/email/email.service";
+import { randomToken, sha256 } from "../utils/crypto";
 import { env } from "../config/env";
 
 const REQUIRED_FIELDS = [
@@ -27,7 +28,6 @@ function completionOf(fields: any): number {
 export function startEmployeeInvitationReminderScheduler() {
   const reminderHours = Number(process.env.EMPLOYEE_INVITE_REMINDER_HOURS ?? "72");
   const reminderMs = Math.max(1, reminderHours) * 60 * 60 * 1000;
-  const appUrl = env.appUrl;
 
   const run = async () => {
     const now = new Date();
@@ -50,9 +50,15 @@ export function startEmployeeInvitationReminderScheduler() {
       const completion = completionOf(fields);
       if (completion >= 100) continue;
 
+      // Tokens are stored hashed, so a fresh reminder must mint a new token to
+      // embed a working link in the email. Earlier links are replaced.
+      const token = randomToken();
       await prisma.employeeUpdateInvitation.update({
         where: { id: invitation.id },
         data: {
+          tokenHash: sha256(token),
+          expiresAt: null,
+          status: "SENT",
           reminderCount: (invitation.reminderCount ?? 0) + 1,
           lastReminderSentAt: now,
         },
@@ -62,20 +68,23 @@ export function startEmployeeInvitationReminderScheduler() {
           invitationId: invitation.id,
           purpose: "reminder",
           profileCompletion: completion,
-          renewedToken: false,
+          renewedToken: true,
           sentAt: now,
         },
       });
+      const link = `${env.appUrl}/employee/update?token=${token}`;
       void sendTemplateEmail({
         to: invitation.employee.officialEmail,
-        templateKey: "hr_notification",
+        templateKey: "employee_update_reminder",
         data: {
           name: invitation.employee.fullName,
-          title: "Action required: complete your EMC profile",
-          message: `Your employee profile is ${completion}% complete. The secure link never expires — please open it and submit your profile at your earliest convenience. We'll send reminders every 3 days until you do.`,
-          link: appUrl,
+          employeeCode: invitation.employee.employeeCode,
+          email: invitation.employee.officialEmail,
+          link,
+          completion,
+          purpose: "reminder",
         },
-        metadata: { invitationId: invitation.id, employeeId: invitation.employeeId, reminderPurpose: "reminder" },
+        metadata: { invitationId: invitation.id, employeeId: invitation.employeeId, reminderPurpose: "reminder", renewedToken: true },
       });
     }
 

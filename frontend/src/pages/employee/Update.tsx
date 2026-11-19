@@ -40,6 +40,8 @@ export default function EmployeeUpdate() {
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [savedCv, setSavedCv] = useState<{ fileId: string; fileName: string; size: number } | null>(null);
   const [savedSource, setSavedSource] = useState<string | null>(null);
+  const [fieldReview, setFieldReview] = useState<Array<{ key?: string; label: string; note?: string }> | null>(null);
+  const [rejection, setRejection] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -51,6 +53,11 @@ export default function EmployeeUpdate() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!token) {
+      setStep("success");
+      setError("This link is missing its invitation token. Please open the link from your invitation email, or ask HR to resend it.");
+      return;
+    }
     (async () => {
       try {
         const r = await authApi.validateEmployeeInvitation(token);
@@ -59,6 +66,8 @@ export default function EmployeeUpdate() {
         const draft = r.data?.draft ?? null;
         setSavedCv(r.data?.cv ?? null);
         setSavedSource(r.data?.source ?? null);
+        setFieldReview(r.data?.fieldReview ?? null);
+        setRejection(r.data?.rejection ?? null);
         setEmployee(employeeData);
         setStep("form");
         setForm(() => {
@@ -85,12 +94,18 @@ export default function EmployeeUpdate() {
           setDesignations(payload?.designations ?? []);
           setEmploymentTypes(payload?.employmentTypes ?? []);
         } catch (dropdownError: any) {
-          setError(dropdownError.response?.data?.error?.message || "Dropdowns could not be loaded. The form is still available, but selects may be empty.");
+          setError("Some form options could not be loaded. Please refresh the page — the rest of the form still works.");
         }
       } catch (err: any) {
         if (cancelled) return;
+        const status = err?.response?.status;
+        const serverMessage = err?.response?.data?.error?.message;
         setStep("success");
-        setError(err.response?.data?.error?.message || "This invitation link is invalid. Please contact HR to resend it.");
+        setError(
+          status === 404
+            ? "This invitation link is invalid or has expired. Please ask HR to resend it."
+            : serverMessage || "This invitation link is invalid. Please contact HR to resend it.",
+        );
       }
     })();
     return () => { cancelled = true; };
@@ -159,6 +174,7 @@ export default function EmployeeUpdate() {
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) {
+      setError(`Please correct the ${Object.keys(next).length} highlighted field${Object.keys(next).length === 1 ? "" : "s"} below and submit again.`);
       const first = Object.keys(next)[0];
       const el = document.getElementById(`field-${first}`) ?? document.getElementById("field-cv");
       el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -172,7 +188,16 @@ export default function EmployeeUpdate() {
       await authApi.submitEmployeeUpdate(token, fd);
       setStep("success");
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Submission failed.");
+      const status = err?.response?.status;
+      setError(
+        !err?.response
+          ? "Network problem — please check your internet connection and try again."
+          : status === 413
+            ? `Your CV is too large. Please upload a file under ${MAX_CV_MB} MB.`
+            : status === 400
+              ? "Please review the highlighted fields and try again."
+              : "We could not submit your information right now. Please try again, or contact HR if the problem continues.",
+      );
     } finally { setLoading(false); }
   };
 
@@ -198,12 +223,29 @@ export default function EmployeeUpdate() {
             <Logo size={34} />
             <div className="text-xl font-bold ink-body">Employee Information Update</div>
           </div>
-          <p className="ink-soft text-sm mb-6">Hello <span className="font-semibold">{employee?.fullName}</span>, please review and update your information.{saveStatus !== "idle" && <span className="ml-2 text-[11px] font-semibold align-middle">{saveStatus === "saving" ? "Saving draft…" : saveStatus === "saved" ? "Draft saved" : "Draft not saved"}</span>}</p>
+          <p className="ink-soft text-sm mb-6">Hello <span className="font-semibold">{employee?.fullName}</span>, please review and update your information.{saveStatus !== "idle" && <span className="ml-2 text-[11px] font-semibold align-middle">{saveStatus === "saving" ? "Saving draft…" : saveStatus === "saved" ? "Draft saved" : "Draft not saved — check your connection"}</span>}</p>
+          {(fieldReview?.length || rejection) && (
+            <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+              <div className="font-semibold mb-1">HR requested corrections before this can be applied:</div>
+              {fieldReview?.length ? (
+                <ul className="list-disc pl-5 space-y-0.5">
+                  {fieldReview.map((item, index) => (
+                    <li key={index}><span className="font-semibold">{item.label}</span>{item.note ? <> — {item.note}</> : null}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="whitespace-pre-line">{rejection}</p>
+              )}
+              <p className="mt-2 text-xs text-orange-700">Fields marked by HR are highlighted below. Fix them and resubmit.</p>
+            </div>
+          )}
           <form onSubmit={submit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {FIELDS.map((f) => (
-                <div key={f.key} id={`field-${f.key}`} className="flex flex-col gap-1">
-                  <label className="text-sm font-medium ink-soft">{f.label}<span className="text-red-500 ml-0.5">*</span></label>
+              {FIELDS.map((f) => {
+                const flagged = fieldReview?.some((item) => item.key === f.key);
+                return (
+                <div key={f.key} id={`field-${f.key}`} className={`flex flex-col gap-1${flagged ? " rounded-lg ring-2 ring-orange-300 bg-orange-50/60 p-2 -m-2" : ""}`}>
+                  <label className="text-sm font-medium ink-soft">{f.label}{flagged && <span className="ml-1 text-[10px] font-bold uppercase text-orange-600 align-middle">Correct</span>}<span className="text-red-500 ml-0.5">*</span></label>
                   {f.type === "select"
                     ? f.key === "departmentId"
                       ? <select className="input" value={form[f.key] || ""} onChange={(e) => handleChange(f.key, e.target.value)}>
@@ -222,7 +264,8 @@ export default function EmployeeUpdate() {
                     : <input className="input" type={f.type as any} value={form[f.key] || ""} onChange={(e) => handleChange(f.key, e.target.value)} />}
                   {errors[f.key] && <p className="text-[11px] font-medium text-red-600">{errors[f.key]}</p>}
                 </div>
-              ))}
+                );
+              })}
               <div id="field-cv" className="flex flex-col gap-1">
                 <label className="text-sm font-medium ink-soft">Upload Latest CV<span className="text-red-500 ml-0.5">*</span></label>
                 <div className="flex flex-wrap items-center gap-3">

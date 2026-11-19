@@ -4,6 +4,8 @@ import cors from "cors";
 import compression from "compression";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
+import fs from "node:fs";
+import path from "node:path";
 import { env } from "./config/env";
 import { prisma } from "./lib/prisma";
 import { globalRateLimiter, authRateLimiter } from "./middleware/rateLimit";
@@ -38,7 +40,27 @@ import { startEmployeeInvitationReminderScheduler } from "./services/invitationR
 const app = express();
 
 app.set("trust proxy", 1);
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+// CSP mirrors helmet defaults minus upgrade-insecure-requests so the built
+// portal also works when served over plain HTTP on a LAN (no TLS terminator).
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+    },
+  },
+}));
 app.use(cors({ origin: env.corsOrigins, credentials: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], allowedHeaders: ["Content-Type", "Authorization"] }));
 app.use(compression());
 morgan.token("safe-url", (req: any) => String(req?.originalUrl ?? "")
@@ -82,6 +104,24 @@ app.use("/api/v1/files", filesRoutes);
 // HR self-service databank APIs (protected) are mounted last so they do not
 // intercept public career/offer/document endpoints mounted before them.
 app.use("/api/v1", employeeInvitationsRoutes);
+
+// Serve the built frontend (when present) with SPA fallback so deep links such
+// as /employee/update?token=... work directly from invitation emails.
+const distCandidates = [
+  process.env.FRONTEND_DIST,
+  path.resolve(__dirname, "../../frontend/dist"),
+  path.resolve(process.cwd(), "frontend/dist"),
+  path.resolve(process.cwd(), "../frontend/dist"),
+].filter((p): p is string => Boolean(p));
+const distDir = distCandidates.find((dir) => fs.existsSync(path.join(dir, "index.html")));
+if (distDir) {
+  app.use("/assets", express.static(path.join(distDir, "assets"), { immutable: true, maxAge: "365d", fallthrough: true }));
+  app.use(express.static(distDir, { index: false, maxAge: "1h" }));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) return next();
+    res.sendFile(path.join(distDir, "index.html"));
+  });
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);

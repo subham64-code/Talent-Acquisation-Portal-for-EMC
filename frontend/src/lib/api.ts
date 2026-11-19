@@ -94,6 +94,8 @@ export const hrApi = {
   validateEmployeeSubmission: (id: string) => api.post(`/employee-submissions/${id}/validate`),
   unvalidateEmployeeSubmission: (id: string) => api.post(`/employee-submissions/${id}/unvalidate`),
   rejectEmployeeSubmission: (id: string, reason?: string) => api.post(`/employee-submissions/${id}/reject`, { reason }),
+  requestEmployeeChanges: (id: string, body: { notes: Array<{ key: string; note?: string | null }>; message?: string | null }) =>
+    api.post(`/employee-submissions/${id}/request-changes`, body),
   candidates: (params?: any) => api.get("/candidates", { params }),
   candidate: (id: string) => api.get(`/candidates/${id}`),
   uploadCandidateCV: (id: string, formData: FormData) => api.post(`/candidates/${id}/cv`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
