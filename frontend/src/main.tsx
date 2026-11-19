@@ -2,6 +2,25 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./styles/variables.css";
+import "./styles/global.css";
+import "./styles/reference/talentAcquisition.css";
+import "./styles/reference/employeeDatabank.css";
+import "./styles/reference/interviews.css";
+import "./styles/reference/employeeProfile.css";
+import "./styles/reference/cvManagement.css";
+import "./styles/reference/candidateApplications.css";
+import "./styles/reference/candidateProfile.css";
+import "./styles/publicCareers.css";
+import "./styles/appointmentLetter.css";
+import "./styles/reference/cvScreening.css";
+import "./styles/reference/shortlisting.css";
+import "./styles/reference/finalSelection.css";
+import "./styles/reference/approvals.css";
+import "./styles/reference/offers.css";
+import "./styles/reference/joiningOnboarding.css";
+import "./styles/reference/recruitmentReports.css";
+import "./styles/reference-responsive.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

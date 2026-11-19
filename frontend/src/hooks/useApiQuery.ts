@@ -32,7 +32,6 @@ export const queryKeys = {
   applications: (params: any) => ["applications", params] as const,
   employees: (params: any) => ["employees", params] as const,
   candidates: (params: any) => ["candidates", params] as const,
-  databank: (params: any) => ["databank", params] as const,
   departments: (params: any) => ["departments", params] as const,
   interviews: (params: any) => ["interviews", params] as const,
   offers: (params: any) => ["offers", params] as const,

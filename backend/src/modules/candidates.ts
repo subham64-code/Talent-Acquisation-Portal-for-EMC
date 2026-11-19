@@ -95,7 +95,7 @@ router.post(
     await prisma.cvVersion.create({ data: { candidateId: candidate.id, fileId: file.id, version: 1, isCurrent: true, source: "UPLOAD" } });
     await prisma.candidate.update({ where: { id: candidate.id }, data: { cvFileId: file.id } });
     await cache.peopleChanged();
-    await logAudit(req, { action: "CANDIDATE_CV_UPLOAD", entityType: "Candidate", entityId: candidate.id, actorId: candidate.id, actorEmail: candidate.email });
+    await logAudit(req, { action: "CANDIDATE_CV_UPLOAD", entityType: "Candidate", entityId: candidate.id, actorId: null, actorEmail: candidate.email, metadata: { actorType: "CANDIDATE", candidateId: candidate.id } });
     return ok(res, { fileId: file.id, message: "CV uploaded." });
   }),
 );

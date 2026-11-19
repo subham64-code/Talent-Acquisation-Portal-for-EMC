@@ -24,6 +24,18 @@ const roleSchema = z.string().min(1);
 // other modules (e.g. /files/*) are not intercepted here.
 router.use(["/users", "/permissions", "/roles", "/audit-logs", "/active-sessions", "/storage"], authenticate);
 
+const publicUserSelect = {
+  id: true,
+  name: true,
+  email: true,
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+  roles: { select: { role: { select: { id: true, key: true, name: true } } } },
+  departments: { select: { department: { select: { id: true, name: true, code: true } } } },
+} as const;
+const publicUserWithSessions = { ...publicUserSelect, _count: { select: { sessions: true } } } as const;
+
 router.get(
   "/users",
   requirePermission("users.manage"),
@@ -39,13 +51,10 @@ router.get(
     const [items, total] = await Promise.all([
       prisma.user.findMany({
         where,
-        skip, take,
+        skip,
+        take,
         orderBy: { createdAt: "desc" },
-        include: {
-          roles: { include: { role: true } },
-          departments: { include: { department: true } },
-          _count: { select: { sessions: true } },
-        },
+        select: publicUserWithSessions,
       }),
       prisma.user.count({ where }),
     ]);
@@ -83,7 +92,7 @@ router.post(
         roles: { create: roleIds.map((id) => ({ roleId: id })) },
         departments: { create: departmentIds.map((id) => ({ departmentId: id })) },
       },
-      include: { roles: { include: { role: true } }, departments: true },
+      select: publicUserSelect,
     });
 
     void sendTemplateEmail({
@@ -140,7 +149,7 @@ router.patch(
         ...(parsed.data.roleIds !== undefined ? { roles: { deleteMany: {}, create: parsed.data.roleIds.map((rid) => ({ roleId: rid })) } } : {}),
         ...(parsed.data.departmentIds !== undefined ? { departments: { deleteMany: {}, create: parsed.data.departmentIds.map((did) => ({ departmentId: did })) } } : {}),
       },
-      include: { roles: { include: { role: true } }, departments: true },
+      select: publicUserSelect,
     });
     await logAudit(req, { action: "USER_UPDATE", entityType: "User", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: parsed.data });
     return ok(res, { user: updated });
@@ -155,7 +164,10 @@ router.get(
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const user = await prisma.user.findUnique({
       where: { id },
-      include: { roles: { include: { role: true } }, departments: true, sessions: { orderBy: { createdAt: "desc" }, take: 20 } },
+      select: {
+        ...publicUserSelect,
+        sessions: { orderBy: { createdAt: "desc" }, take: 20, select: { id: true, createdAt: true, expiresAt: true, revokedAt: true } },
+      },
     });
     if (!user) throw ApiError.notFound("User not found.");
     return ok(res, { user });
@@ -195,6 +207,7 @@ router.get(
     const sessions = await prisma.authSession.findMany({
       where: { subjectType: "HR", subjectId: id },
       orderBy: { createdAt: "desc" },
+      select: { id: true, createdAt: true, expiresAt: true, revokedAt: true, userAgent: true, ip: true },
     });
     return ok(res, { sessions });
   }),

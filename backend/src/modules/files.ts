@@ -6,8 +6,9 @@ import { ApiError } from "../utils/ApiError";
 import { ok } from "../utils/http";
 import { authenticate, optionalAuthenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
 import { verifyPurposeToken, signPurposeToken } from "../utils/jwt";
-import { readStoredFile, presignS3Get } from "../storage/index";
+import { readStoredFile } from "../storage/index";
 import { env } from "../config/env";
+import { contentDispositionFilename } from "../utils/crypto";
 
 const router = express.Router();
 
@@ -43,7 +44,7 @@ router.get(
     const buffer = await readStoredFile(file);
     const inline = /^(application\/pdf|image\/(jpeg|png|webp))$/.test(file.mimeType);
     res.setHeader("Content-Type", file.mimeType);
-    res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${file.originalName}"`);
+    res.setHeader("Content-Disposition", contentDispositionFilename(file.originalName, inline ? "inline" : "attachment"));
     res.setHeader("Content-Length", String(buffer.length));
     res.setHeader("Cache-Control", "private, no-store");
     return res.send(buffer);
@@ -66,7 +67,7 @@ router.get(
     if (!ok) throw ApiError.forbidden("Invalid or expired access token.");
     const buffer = await readStoredFile(file);
     res.setHeader("Content-Type", file.mimeType);
-    res.setHeader("Content-Disposition", `inline; filename="${file.originalName}"`);
+    res.setHeader("Content-Disposition", contentDispositionFilename(file.originalName, "inline"));
     res.setHeader("Content-Length", String(buffer.length));
     return res.send(buffer);
   }),
@@ -81,14 +82,10 @@ router.post(
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const file = await prisma.storedFile.findUnique({ where: { id } });
     if (!file) throw ApiError.notFound("File not found.");
-    // For S3-backed files hand out a short-lived direct-to-bucket URL so the
-    // browser downloads the bytes without proxying them through this server.
-    if (file.provider === "s3") {
-      const signed = await presignS3Get(file.storagePath, 3600);
-      if (signed) return ok(res, { token: null, url: signed, presigned: true, expiresIn: 3600 });
-    }
+    // Always issue an app-scoped token as well, so the browser never has to rely
+    // on a cross-origin direct URL to open private company documents.
     const token = signPurposeToken({ fileId: file.id }, "FILE_ACCESS", "1h");
-    return ok(res, { token, url: `${env.publicApiUrl}/api/v1/files/${id}?token=${token}`, presigned: false });
+    return ok(res, { token, url: `${env.publicApiUrl}/api/v1/files/${id}?token=${token}`, presigned: false, expiresIn: 3600, s3: file.provider === "s3" });
   }),
 );
 

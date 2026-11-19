@@ -6,7 +6,7 @@ import { ApiError } from "../utils/ApiError";
 import { ok, created, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
 import { authenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
-import { randomToken, hashSecret } from "../utils/crypto";
+import { randomToken, hashSecret, sha256 } from "../utils/crypto";
 import { cvUpload } from "../middleware/upload";
 import { storeFile, STORAGE_BUCKETS } from "../storage/index";
 import { logAudit } from "../services/audit.service";
@@ -39,7 +39,37 @@ const empSchema = z.object({
   leavingDate: z.coerce.date().optional().nullable(),
   remarks: z.string().optional().nullable(),
   additionalInfo: z.string().optional().nullable(),
+  institution: z.string().max(200).optional().nullable(),
+  previousDesignation: z.string().max(120).optional().nullable(),
+  jobResponsibilities: z.string().max(2000).optional().nullable(),
 });
+
+async function syncEducationAndHistory(employeeId: string, data: z.infer<typeof empSchema>) {
+  const educationTouched = [data.qualification, data.institution, data.specialization, data.graduationYear].some((v) => v !== undefined && v !== null);
+  if (educationTouched) {
+    const existing = await prisma.educationRecord.findFirst({ where: { employeeId }, orderBy: { id: "asc" } });
+    const degree = data.qualification ?? existing?.degree ?? "—";
+    const record = {
+      degree,
+      institution: data.institution ?? existing?.institution ?? null,
+      field: data.specialization ?? existing?.field ?? null,
+      endYear: data.graduationYear ?? existing?.endYear ?? null,
+    };
+    if (existing) await prisma.educationRecord.update({ where: { id: existing.id }, data: record });
+    else await prisma.educationRecord.create({ data: { employeeId, ...record } });
+  }
+  const historyTouched = [data.previousOrganization, data.previousDesignation, data.jobResponsibilities].some((v) => v !== undefined && v !== null);
+  if (historyTouched) {
+    const existing = await prisma.employmentHistory.findFirst({ where: { employeeId }, orderBy: { id: "asc" } });
+    const record = {
+      organization: data.previousOrganization ?? existing?.organization ?? "Previous organisation",
+      title: data.previousDesignation ?? existing?.title ?? null,
+      description: data.jobResponsibilities ?? existing?.description ?? null,
+    };
+    if (existing) await prisma.employmentHistory.update({ where: { id: existing.id }, data: record });
+    else await prisma.employmentHistory.create({ data: { employeeId, ...record } });
+  }
+}
 
 function empUpdateData(parsed: z.infer<typeof empSchema>) {
   const data: Record<string, unknown> = {};
@@ -59,7 +89,7 @@ router.get(
   "/",
   requirePermission("employees.view"),
   asyncHandler(async (req, res) => {
-    const { page, pageSize, skip, take, search } = getPagination(req);
+    const { page, pageSize, skip, take, search } = getPagination(req, 20, 1000);
     const where: any = {};
     if (req.query.status) where.status = String(req.query.status);
     if (req.query.departmentId) where.departmentId = String(req.query.departmentId);
@@ -118,6 +148,7 @@ router.post(
     }
 
     const item = await prisma.employee.create({ data: data as any, include: { department: true, designation: true, employmentType: true } });
+    await syncEducationAndHistory(item.id, parsed.data);
     await cache.peopleChanged();
     await logAudit(req, { action: "EMPLOYEE_CREATE", entityType: "Employee", entityId: item.id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { officialEmail } });
     return created(res, { item });
@@ -149,6 +180,7 @@ router.patch(
       if (!des) throw ApiError.badRequest("Invalid designation.");
     }
     const updated = await prisma.employee.update({ where: { id }, data: data as any, include: { department: true, designation: true, employmentType: true } });
+    await syncEducationAndHistory(id, parsed.data);
     await cache.peopleChanged();
     await logAudit(req, { action: "EMPLOYEE_UPDATE", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: parsed.data });
     return ok(res, { item: updated });
@@ -197,14 +229,14 @@ router.post(
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee) throw ApiError.notFound("Employee not found.");
     const existing = await prisma.employeeUpdateInvitation.findFirst({ where: { employeeId: id, usedAt: null }, orderBy: { createdAt: "desc" } });
-    if (existing && existing.expiresAt.getTime() > Date.now()) throw ApiError.conflict("An active invitation already exists.");
+    if (existing) throw ApiError.conflict("An active invitation already exists.");
     const token = randomToken();
-    const expiresAt = new Date(Date.now() + env.employeeInviteTtlHours * 60 * 60 * 1000);
-    const invitation = await prisma.employeeUpdateInvitation.create({ data: { employeeId: id, tokenHash: hashSecret(token), expiresAt, createdById: req.auth!.subjectId } });
+    const expiresAt: Date | null = null;
+    const invitation = await prisma.employeeUpdateInvitation.create({ data: { employeeId: id, tokenHash: sha256(token), createdById: req.auth!.subjectId } });
     const link = `${env.appUrl}/employee/update?token=${token}`;
     void sendTemplateEmail({
       to: employee.officialEmail, templateKey: "employee_update_invitation",
-      data: { name: employee.fullName, employeeCode: employee.employeeCode, email: employee.officialEmail, link, expiresAt: expiresAt.toISOString() },
+      data: { name: employee.fullName, employeeCode: employee.employeeCode, email: employee.officialEmail, link, expiresAt: null },
       metadata: { invitationId: invitation.id, employeeId: id },
     });
     await logAudit(req, { action: "EMPLOYEE_INVITE_RESEND", entityType: "EmployeeUpdateInvitation", entityId: invitation.id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
@@ -243,20 +275,20 @@ router.post(
           where: { employeeId: employee.id, usedAt: null },
           orderBy: { createdAt: "desc" },
         });
-        if (existing && existing.expiresAt.getTime() > Date.now()) {
+        if (existing) {
           results.skipped.push({ email, reason: "An active invitation already exists." });
           continue;
         }
         const token = randomToken();
-        const expiresAt = new Date(Date.now() + env.employeeInviteTtlHours * 60 * 60 * 1000);
+        const expiresAt: Date | null = null;
         const invitation = await prisma.employeeUpdateInvitation.create({
-          data: { employeeId: employee.id, tokenHash: hashSecret(token), expiresAt, createdById: req.auth!.subjectId },
+          data: { employeeId: employee.id, tokenHash: sha256(token), createdById: req.auth!.subjectId },
         });
         const link = `${env.appUrl}/employee/update?token=${token}`;
         void sendTemplateEmail({
           to: email,
           templateKey: "employee_update_invitation",
-          data: { name: employee.fullName, employeeCode: employee.employeeCode, email, link, expiresAt: expiresAt.toISOString() },
+          data: { name: employee.fullName, employeeCode: employee.employeeCode, email, link, expiresAt: null },
           metadata: { invitationId: invitation.id, employeeId: employee.id },
         });
         results.invited += 1;
@@ -286,6 +318,21 @@ router.delete(
     await cache.peopleChanged();
     await logAudit(req, { action: "EMPLOYEE_DELETE", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { officialEmail: employee.officialEmail } });
     return ok(res, { message: "Employee deleted." });
+  }),
+);
+
+router.delete(
+  "/:id/cv",
+  requirePermission("employees.manage"),
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const employee = await prisma.employee.findUnique({ where: { id } });
+    if (!employee) throw ApiError.notFound("Employee not found.");
+    await prisma.cvVersion.updateMany({ where: { employeeId: id, isCurrent: true }, data: { isCurrent: false } });
+    await prisma.employee.update({ where: { id }, data: { cvFileId: null } });
+    await cache.peopleChanged();
+    await logAudit(req, { action: "EMPLOYEE_CV_REMOVE", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
+    return ok(res, { message: "CV removed from the employee record." });
   }),
 );
 

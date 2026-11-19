@@ -20,6 +20,9 @@ router.use(authenticate, requireAuth("HR"), requireHr);
 const statusSchema = z.object({
   status: z.nativeEnum(APPLICATION_STATUS),
   remarks: z.string().optional().nullable(),
+  finalSelectionSalary: z.coerce.number().nonnegative().optional().nullable(),
+  finalSelectionExpectedSalary: z.coerce.number().nonnegative().optional().nullable(),
+  finalSelectionNote: z.string().max(500).optional().nullable(),
 });
 
 router.get(
@@ -31,6 +34,14 @@ router.get(
     if (req.query.status) where.status = String(req.query.status);
     if (req.query.jobOpeningId) where.jobOpeningId = String(req.query.jobOpeningId);
     if (req.query.candidateId) where.candidateId = String(req.query.candidateId);
+    const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom ? new Date(`${req.query.dateFrom}T00:00:00.000Z`) : null;
+    const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo ? new Date(`${req.query.dateTo}T00:00:00.000Z`) : null;
+    if (dateFrom && !Number.isNaN(dateFrom.getTime())) where.appliedAt = { ...(where.appliedAt ?? {}), gte: dateFrom };
+    if (dateTo && !Number.isNaN(dateTo.getTime())) {
+      const end = new Date(dateTo);
+      end.setUTCHours(23, 59, 59, 999);
+      where.appliedAt = { ...(where.appliedAt ?? {}), lte: end };
+    }
     if (req.query.departmentId) where.jobOpening = { departmentId: String(req.query.departmentId) };
     // Department-scoped HR roles (e.g. Department Manager) only see their departments.
     const scope = departmentScope(req.auth);
@@ -48,13 +59,13 @@ router.get(
       ];
     }
     const filterKey = [
-      req.query.jobOpeningId ?? "-", req.query.status ?? "-", search ?? "-", req.query.departmentId ?? "-",
+      req.query.jobOpeningId ?? "-", req.query.status ?? "-", search ?? "-", req.query.departmentId ?? "-", req.query.dateFrom ?? "-", req.query.dateTo ?? "-",
     ].join("|");
     const [items, total] = await Promise.all([
       cached(CACHE_KEYS.applicationsList(page, pageSize, filterKey), env.cacheTtlSeconds, async () =>
         prisma.application.findMany({
           where, skip, take, orderBy: { appliedAt: "desc" },
-          include: { candidate: true, jobOpening: { include: { department: true } }, resumeFile: true, statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "desc" }, take: 10 } },
+          include: { candidate: { include: { skills: { include: { skill: true } }, education: true, employmentHistory: true, certifications: true, cvFile: true } }, jobOpening: { include: { department: true } }, resumeFile: true, statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "desc" }, take: 10 } },
         }),
       ),
       prisma.application.count({ where }),
@@ -71,7 +82,7 @@ router.get(
     const item = await prisma.application.findUnique({
       where: { id },
       include: {
-        candidate: { include: { skills: { include: { skill: true } }, cvFile: true } },
+        candidate: { include: { skills: { include: { skill: true } }, cvFile: true, education: { orderBy: { endYear: "desc" } }, employmentHistory: { orderBy: { startDate: "desc" } }, certifications: true } },
         jobOpening: { include: { department: true } },
         resumeFile: true,
         statusHistory: { include: { changedBy: true }, orderBy: { createdAt: "desc" } },
@@ -102,8 +113,12 @@ router.patch(
     if (!allowed.includes(status)) throw ApiError.badRequest(`Cannot move application from ${app.status} to ${status}.`);
 
     const prev = app.status;
+    const selectionFields: Record<string, unknown> = {};
+    if (parsed.data.finalSelectionSalary !== undefined) selectionFields.finalSelectionSalary = parsed.data.finalSelectionSalary;
+    if (parsed.data.finalSelectionExpectedSalary !== undefined) selectionFields.finalSelectionExpectedSalary = parsed.data.finalSelectionExpectedSalary;
+    if (parsed.data.finalSelectionNote !== undefined) selectionFields.finalSelectionNote = parsed.data.finalSelectionNote;
     const [updated] = await Promise.all([
-      prisma.application.update({ where: { id }, data: { status, ...(remarks !== undefined ? { hrRemarks: remarks } : {}) }, include: { candidate: true, jobOpening: true } }),
+      prisma.application.update({ where: { id }, data: { status, ...selectionFields, ...(remarks !== undefined ? { hrRemarks: remarks } : {}) }, include: { candidate: true, jobOpening: true } }),
       prisma.applicationStatusHistory.create({ data: { applicationId: id, fromStatus: prev, toStatus: status, changedById: req.auth!.subjectId, remarks } }),
     ]);
     await cache.applicationsChanged();
@@ -140,6 +155,32 @@ router.patch(
     }
     await Promise.allSettled(notifications);
     return ok(res, { item: updated, label: APPLICATION_STATUS_LABELS[status] });
+  }),
+);
+
+const approvalDetailsSchema = z.object({
+  finalSelectionSalary: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
+  finalSelectionExpectedSalary: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
+  finalSelectionNote: z.union([z.string().max(1000), z.null()]).optional(),
+  aiMatchScore: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, "Provide at least one approval detail to update.");
+
+router.patch(
+  "/:id/approval",
+  requirePermission("applications.manage"),
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const parsed = approvalDetailsSchema.safeParse(req.body);
+    if (!parsed.success) throw ApiError.badRequest("Invalid approval details.", parsed.error.flatten());
+    const app = await prisma.application.findUnique({ where: { id }, include: { candidate: true } });
+    if (!app) throw ApiError.notFound("Application not found.");
+    const updated = await prisma.application.update({
+      where: { id },
+      data: { ...parsed.data } as any,
+      include: { candidate: true, jobOpening: true },
+    });
+    await logAudit(req, { action: "APPROVAL_DETAIL_UPDATE", entityType: "Application", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { changedFields: Object.keys(parsed.data), candidateId: app.candidateId } });
+    return ok(res, { item: updated });
   }),
 );
 

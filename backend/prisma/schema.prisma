@@ -197,6 +197,7 @@ model Department {
   offers            OfferLetter[]
   historyFrom       EmployeeDepartmentHistory[] @relation("FromDepartment")
   historyTo         EmployeeDepartmentHistory[] @relation("ToDepartment")
+  programs          Program[]
 
   @@map("departments")
 }
@@ -218,8 +219,11 @@ model Program {
   name        String  @unique
   description String?
   isActive    Boolean @default(true)
+  departmentId String?
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   jobOpenings JobOpening[]
 
+  @@index([departmentId])
   @@map("programs")
 }
 
@@ -449,20 +453,50 @@ model CvVersion {
 }
 
 model EmployeeUpdateInvitation {
-  id           String    @id @default(cuid())
-  employeeId   String
-  tokenHash    String    @unique
-  expiresAt    DateTime
-  usedAt       DateTime?
-  createdById  String?
-  submission   Json?
-  createdAt    DateTime  @default(now())
+  id                   String    @id @default(cuid())
+  employeeId           String
+  tokenHash            String    @unique
+  expiresAt            DateTime?
+  usedAt               DateTime?
+  createdById          String?
+  submission           Json?
+  createdAt            DateTime  @default(now())
 
-  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  createdBy User?    @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  status               String    @default("SENT")
+  openedAt             DateTime?
+  draft                Json?
+  draftUpdatedAt       DateTime?
+  submissionStatus     String?
+  submissionRejection  String?   @db.Text
+  reviewedAt           DateTime?
+  reviewedById         String?
+  reminderCount        Int       @default(0)
+  lastReminderSentAt   DateTime?
+  tokenRenewedAt       DateTime?
+  tokenRenewalCount    Int       @default(0)
+
+  employee  Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy User?                    @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reminders EmployeeInviteReminder[]
 
   @@index([employeeId])
+  @@index([status])
+  @@index([submissionStatus])
   @@map("employee_update_invitations")
+}
+
+model EmployeeInviteReminder {
+  id                String    @id @default(cuid())
+  invitationId      String
+  purpose           String
+  profileCompletion Int       @default(0)
+  renewedToken      Boolean   @default(false)
+  sentAt            DateTime  @default(now())
+
+  invitation EmployeeUpdateInvitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+
+  @@index([invitationId])
+  @@map("employee_invite_reminders")
 }
 
 // ------------------------------------------------------------
@@ -473,7 +507,7 @@ model JobOpening {
   id                     String    @id @default(cuid())
   jobCode                String    @unique
   title                  String
-  departmentId           String
+  departmentId           String?
   programId              String?
   positions              Int       @default(1)
   location               String?
@@ -497,7 +531,7 @@ model JobOpening {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  department     Department     @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  department     Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   program        Program?       @relation(fields: [programId], references: [id], onDelete: SetNull)
   employmentType EmploymentType? @relation(fields: [employmentTypeId], references: [id], onDelete: SetNull)
   jdFile         StoredFile?    @relation("JobJd", fields: [jdFileId], references: [id], onDelete: SetNull)
@@ -539,6 +573,9 @@ model Application {
   coverLetter     String?   @db.Text
   resumeFileId    String?
   hrRemarks       String?   @db.Text
+  finalSelectionSalary Float?
+  finalSelectionExpectedSalary Float?
+  finalSelectionNote String?  @db.Text
   appliedAt       DateTime  @default(now())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -682,6 +719,8 @@ model Interview {
   meetingLink      String?
   interviewerName  String?
   interviewerEmail String?
+  interviewerType  String?
+  interviewerMetadata Json?
   instructions     String?   @db.Text
   internalRemarks  String?   @db.Text
   status           String    @default("SCHEDULED")

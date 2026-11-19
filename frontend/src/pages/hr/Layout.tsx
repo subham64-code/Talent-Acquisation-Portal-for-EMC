@@ -12,15 +12,18 @@ export default function HRLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-screen bg-[var(--app-bg)]">
+    <div className="app-shell">
       <Sidebar open={mobileOpen} onNavigate={() => setMobileOpen(false)} />
-
-      <div className="pl-0 md:pl-[268px] transition-[padding] duration-300">
-        <TopNav onToggleMenu={() => setMobileOpen(true)} />
-        <main className="pb-10">
-          <div className="max-w-[1560px] mx-auto">
-            <Outlet />
-          </div>
+      <button
+        type="button"
+        className={`sidebar-scrim ${mobileOpen ? "open" : ""}`}
+        aria-label="Close navigation"
+        onClick={() => setMobileOpen(false)}
+      />
+      <div className="app-main">
+        <TopNav onToggleMenu={() => setMobileOpen((current) => !current)} />
+        <main className="app-content">
+          <Outlet />
         </main>
       </div>
     </div>

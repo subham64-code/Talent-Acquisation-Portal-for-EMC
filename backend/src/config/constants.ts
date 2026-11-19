@@ -155,7 +155,7 @@ export const APPLICATION_TRANSITIONS: Record<string, ApplicationStatus[]> = {
   INTERVIEW_SCHEDULED: ["INTERVIEW_COMPLETED", "SHORTLISTED", "SELECTED", "UNDER_REVIEW", "REJECTED", "ON_HOLD", "WITHDRAWN"],
   INTERVIEW_COMPLETED: ["SELECTED", "REJECTED", "ON_HOLD", "INTERVIEW_SCHEDULED"],
   SELECTED: ["OFFER_SENT", "REJECTED", "ON_HOLD", "WITHDRAWN"],
-  ON_HOLD: ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "REJECTED", "WITHDRAWN"],
+  ON_HOLD: ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "SELECTED", "REJECTED", "WITHDRAWN"],
   OFFER_SENT: ["OFFER_ACCEPTED", "REJECTED", "WITHDRAWN"],
   OFFER_ACCEPTED: ["DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW", "HIRED", "WITHDRAWN"],
   DOCUMENTS_PENDING: ["DOCUMENTS_UNDER_REVIEW", "HIRED", "WITHDRAWN"],
@@ -210,7 +210,7 @@ export const INTERVIEW_RESULT = {
   NEXT_ROUND: "NEXT_ROUND",
 } as const;
 
-export const INTERVIEW_MODES = ["ONLINE", "OFFLINE", "PHONE"] as const;
+export const INTERVIEW_MODES = ["ONLINE", "OFFLINE"] as const;
 
 export const FILE_VISIBILITY = {
   PRIVATE: "PRIVATE",
@@ -225,6 +225,8 @@ export const EMAIL_TEMPLATE_KEYS = [
   "candidate_shortlisted",
   "interview_scheduled",
   "interview_rescheduled",
+  "interview_scheduled_interviewer",
+  "interview_rescheduled_interviewer",
   "interview_cancelled",
   "candidate_selected",
   "candidate_rejected",

@@ -59,8 +59,6 @@ router.get(
     return ok(res, {
       database: { provider: "neon-postgresql", cloud: true },
       storage,
-      googleDrive: storage.provider === "google_drive" && storage.configured,
-      googleSheets: env.googleSheetsEnabled && Boolean(env.googleSheetsSpreadsheetId),
       s3: storage.provider === "s3" && storage.configured,
       smtp: Boolean(env.smtpHost && env.smtpUser),
       cache: cacheInfo,

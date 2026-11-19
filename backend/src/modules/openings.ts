@@ -28,8 +28,8 @@ const arrayField = z.preprocess((val) => {
 const openingSchema = z.object({
   jobCode: z.string().min(2).max(30).optional(),
   title: z.string().min(2).max(160),
-  departmentId: z.string().min(1),
-  programId: z.string().min(1).optional().nullable(),
+  departmentId: z.string().optional().nullable(),
+  programId: z.string().optional().nullable(),
   positions: z.coerce.number().int().nonnegative().default(1),
   location: z.string().optional().nullable(),
   employmentTypeId: z.string().min(1).optional().nullable(),
@@ -44,7 +44,7 @@ const openingSchema = z.object({
   requiredCertifications: arrayField,
   startDate: z.coerce.date().optional().nullable(),
   deadline: z.coerce.date().optional().nullable(),
-  status: z.enum(["DRAFT", "PUBLISHED", "CLOSED"]).optional(),
+  status: z.enum(["DRAFT", "PUBLISHED", "CLOSED", "ARCHIVED"]).optional(),
 });
 
 router.get(
@@ -143,7 +143,7 @@ router.post(
       data: {
         jobCode: data.jobCode || codeFromName(data.title, "JOB"),
         title: data.title,
-        departmentId: departmentId!,
+        departmentId: departmentId || undefined,
         programId,
         positions: data.positions,
         location: data.location,
@@ -197,14 +197,12 @@ router.patch(
   }),
 );
 
-function statusAction(status: "PUBLISHED" | "CLOSED") {
+function statusAction(status: "PUBLISHED" | "CLOSED" | "ARCHIVED") {
   return asyncHandler(async (req: express.Request, res: express.Response) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const item = await prisma.jobOpening.findUnique({ where: { id } });
     if (!item) throw ApiError.notFound("Opening not found.");
-    const data: Record<string, unknown> = { status };
-    if (status === "PUBLISHED") data.publishedAt = new Date();
-    if (status === "CLOSED") data.closedAt = new Date();
+    const data: Record<string, unknown> = { status, closedAt: ["CLOSED", "ARCHIVED"].includes(status) ? new Date() : null, publishedAt: status === "PUBLISHED" ? new Date() : item.publishedAt };
     if (status === "PUBLISHED") data.closedAt = null;
     const updated = await prisma.jobOpening.update({ where: { id }, data });
     await cache.openingsChanged();
@@ -215,6 +213,7 @@ function statusAction(status: "PUBLISHED" | "CLOSED") {
 
 router.post("/:id/publish", requirePermission("openings.manage"), statusAction("PUBLISHED"));
 router.post("/:id/close", requirePermission("openings.manage"), statusAction("CLOSED"));
+router.post("/:id/archive", requirePermission("openings.manage"), statusAction("ARCHIVED"));
 
 router.post(
   "/:id/reopen",

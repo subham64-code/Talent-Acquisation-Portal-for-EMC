@@ -1,0 +1,97 @@
+/* Defensive responsive overrides for reference-style HR/TA pages.
+   The reference breakpoints are preserved; these rules only prevent
+   accidental overflow on narrow phones. */
+
+.table-wrapper,
+.table-card {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  table-layout: auto;
+}
+
+@media (max-width: 720px) {
+  .page-toolbar,
+  .ta-applications-toolbar__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-toolbar__spacer,
+  .ta-applications-toolbar__spacer {
+    display: none;
+  }
+
+  .filters {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .detail-grid,
+  .detail-grid--3,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-layout,
+  .ta-profile-grid,
+  .ta-screening-layout,
+  .ta-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-hero,
+  .former-view__hero {
+    grid-template-columns: 1fr;
+  }
+
+  .card__header,
+  .invitation-view__hero,
+  .former-view__hero,
+  .employee-acquisition {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ta-summary-grid,
+  .ta-metric-grid,
+  .mini-progress,
+  .invitation-view__badges,
+  .former-view__badges,
+  .profile-hero__contacts {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-content {
+    padding: 1.25rem 0.85rem 2rem;
+  }
+
+  .stats-grid,
+  .ta-stats-grid,
+  .ta-screening-stats,
+  .ta-interview-summary,
+  .ta-summary-grid,
+  .ta-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .btn,
+  .btn--primary,
+  .btn--outline,
+  .btn--ghost {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .ta-list__item,
+  .ta-calendar__item {
+    flex-wrap: wrap;
+  }
+}

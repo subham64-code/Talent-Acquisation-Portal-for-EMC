@@ -1,250 +1,400 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  PieChart, Pie, Cell, AreaChart, Area,
-} from "recharts";
-import { hrApi } from "../../lib/api";
-import { useAuth } from "../../context/AuthContext";
-import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
-import {
-  Users, Building2, Briefcase, FileStack, UsersRound, Star, CalendarClock, Target, Sparkles,
+  Activity,
+  BellRing,
+  CalendarClock,
+  CheckCircle2,
+  FileStack,
+  FileWarning,
+  Gauge,
+  Inbox,
+  MailCheck,
+  MailQuestion,
+  Send,
+  ShieldCheck,
+  ShieldQuestion,
+  UserCheck,
+  UserPlus,
+  UsersRound,
 } from "lucide-react";
+import PageHeader from "../../components/ref/PageHeader";
+import Badge from "../../components/ref/Badge";
+import DataTable, { type Column } from "../../components/DataTable";
+import DepartmentPeoplePanel from "./DepartmentPeoplePanel";
+import { hrApi } from "../../lib/api";
+import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
+import { EmptyStateBlock, formatDate, formatDateTime, relativeDay, initials } from "./databank/shared";
 
-const PIE_COLORS = ["#659616", "#FF9412", "#8BC34A", "#E5810A", "#84BD26", "#FBBF24", "#34D399", "#94A3B8"];
+const STAGES = [
+  { key: "APPLIED", label: "Applied", description: "Applications received from the Career Portal", count: (a: any[]) => a.filter((x) => x.status === "APPLIED").length },
+  { key: "SCREENING", label: "Screening", description: "CV screening in progress", count: (a: any[]) => a.filter((x) => ["UNDER_REVIEW", "AI_RECOMMENDED"].includes(x.status)).length },
+  { key: "SHORTLISTED", label: "Shortlisted", description: "Screened and shortlisted by HR", count: (a: any[]) => a.filter((x) => x.status === "SHORTLISTED").length },
+  { key: "INTERVIEW", label: "Interview", description: "Interview rounds in progress", count: (a: any[]) => a.filter((x) => ["INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETED"].includes(x.status)).length },
+  { key: "FINAL_SELECTION", label: "Final Selection", description: "HR decision on the interviewed candidate", count: (a: any[]) => a.filter((x) => x.status === "INTERVIEW_COMPLETED").length },
+  { key: "APPROVAL", label: "Approval", description: "Hiring recommendation awaiting admin approval", count: (a: any[]) => a.filter((x) => x.status === "SELECTED").length },
+  { key: "OFFER", label: "Offer", description: "Offer drafted and issued", count: (a: any[]) => a.filter((x) => ["OFFER_SENT", "OFFER_ACCEPTED"].includes(x.status)).length },
+  { key: "JOINING", label: "Joining", description: "Joining and onboarding progress", count: (a: any[]) => a.filter((x) => ["DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW", "HIRED"].includes(x.status)).length },
+];
 
-function timeGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function StatCard({
-  label, value, meta, icon: Icon, variant, to,
-}: { label: string; value: React.ReactNode; meta?: string; icon: any; variant?: "green" | "orange" | "grey"; to: string }) {
-  return (
-    <Link to={to} className={`stat-card ${variant === "orange" ? "stat-card--orange" : variant === "grey" ? "stat-card--grey" : ""}`} aria-label={`View ${label}`}>
-      <span className="stat-card__icon"><Icon size={20} aria-hidden="true" /></span>
-      <span className="min-w-0">
-        <span className="stat-card__label block">{label}</span>
-        <span className="stat-card__value block mt-0.5">{value}</span>
-        {meta && <span className="stat-card__meta block mt-1">{meta}</span>}
-      </span>
-    </Link>
-  );
-}
-
-function SectionTitle({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3 mb-4">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="w-1.5 h-6 rounded-full bg-gradient-to-b from-[#659616] to-[#4C730D]" />
-        <h3 className="font-extrabold text-[var(--ink)] tracking-tight truncate">{children}</h3>
-      </div>
-      {right && <div className="shrink-0">{right}</div>}
-    </div>
-  );
+function statusMeta(status: string): { label: string; variant: "green" | "orange" | "blue" | "red" | "grey" | "purple" } {
+  const map: Record<string, { label: string; variant: "green" | "orange" | "blue" | "red" | "grey" | "purple" }> = {
+    APPLIED: { label: "Applied", variant: "grey" },
+    UNDER_REVIEW: { label: "Under Review", variant: "orange" },
+    AI_RECOMMENDED: { label: "AI Recommended", variant: "blue" },
+    SHORTLISTED: { label: "Shortlisted", variant: "purple" },
+    INTERVIEW_SCHEDULED: { label: "Interview Scheduled", variant: "blue" },
+    INTERVIEW_COMPLETED: { label: "Interview Completed", variant: "orange" },
+    SELECTED: { label: "Selected", variant: "green" },
+    REJECTED: { label: "Rejected", variant: "red" },
+    ON_HOLD: { label: "On Hold", variant: "orange" },
+    OFFER_SENT: { label: "Offer Sent", variant: "blue" },
+    OFFER_ACCEPTED: { label: "Offer Accepted", variant: "green" },
+    DOCUMENTS_PENDING: { label: "Documents Pending", variant: "orange" },
+    DOCUMENTS_UNDER_REVIEW: { label: "Under Review", variant: "blue" },
+    HIRED: { label: "Hired", variant: "green" },
+    WITHDRAWN: { label: "Withdrawn", variant: "grey" },
+  };
+  return map[status] ?? { label: status, variant: "grey" };
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const [selectedDepartment, setSelectedDepartment] = useState<{ id: string; name: string } | null>(null);
 
-  const { data: overview, isLoading } = useApiQuery<any>(
-    queryKeys.dashboardOverview,
-    () => hrApi.dashboardOverview(),
+  const { data: overview } = useApiQuery<any>(queryKeys.dashboardOverview, () => hrApi.dashboardOverview());
+  const stats = overview ?? {};
+  const { data: applications = [] } = useApiQuery<any[]>(
+    ["applications", "all", "dashboard"],
+    () => hrApi.applications({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
   );
-  const { data: departments = [] } = useApiQuery<any[]>(
-    queryKeys.dashboardDepartments,
-    () => hrApi.dashboardDepartments().then((r: any) => r?.data?.departments ?? []),
+  const { data: interviews = [] } = useApiQuery<any[]>(
+    ["interviews", "dashboard"],
+    () => hrApi.interviews({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
   );
-  const { data: pipeline = [] } = useApiQuery<any[]>(
-    ["dashboard", "pipeline"],
-    () => hrApi.applications({ page: 1, pageSize: 500 }).then((r: any) => r?.data?.items ?? []),
+  const { data: offers = [] } = useApiQuery<any[]>(
+    ["offers", "dashboard"],
+    () => hrApi.offers({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
+  );
+  const { data: emailLogs = [] } = useApiQuery<any[]>(
+    ["email-logs", "dashboard"],
+    () => hrApi.emailLogs().then((r: any) => r?.data?.emailLogs ?? []),
+  );
+  const { data: auditLogs = [] } = useApiQuery<any[]>(
+    ["audit-logs", "dashboard"],
+    () => hrApi.auditLogs({ page: 1, pageSize: 7 }).then((r: any) => r?.data?.items ?? r?.data?.logs ?? []),
   );
 
-  const funnelStages = [
-    { key: "APPLIED", label: "Applied", color: "#171717" },
-    { key: "UNDER_REVIEW", label: "Review", color: "#64748B" },
-    { key: "SHORTLISTED", label: "Shortlisted", color: "#659616" },
-    { key: "INTERVIEW_SCHEDULED", label: "Interview", color: "#8BC34A" },
-    { key: "SELECTED", label: "Selected", color: "#FF9412" },
-    { key: "HIRED", label: "Hired", color: "#E5810A" },
+  const counts = useMemo(
+    () => ({
+      totalApplications: applications.length,
+      newApplications: Number(stats.newApplications ?? 0),
+      underScreening: Number(stats.underScreening ?? 0),
+      shortlisted: Number(stats.shortlistedCandidates ?? 0),
+      upcomingInterviews: Number(stats.upcomingInterviews ?? 0),
+      selected: Number(stats.selectedCandidates ?? 0),
+      pendingApprovals: Number(stats.pendingApprovals ?? 0),
+      offersSent: Number(stats.offersSentCount ?? stats.pendingOffers ?? 0),
+      approvedAwaitingOffer: Number(stats.pendingApprovals ?? 0),
+      offersAwaitingResponse: Number(stats.offersAwaitingResponse ?? 0),
+      acceptedAwaitingDocuments: Number(stats.acceptedAwaitingDocuments ?? 0),
+      documentsAwaitingVerification: Number(stats.documentsAwaitingVerification ?? 0),
+      documentsResubmissionRequired: Number(stats.documentsResubmissionRequired ?? 0),
+      joiningPending: Number(stats.joiningPending ?? 0),
+      employeesHandedOver: Number(stats.employeesHandedOver ?? 0),
+      hrPendingActions: Number(stats.pendingApprovals ?? 0) + Number(stats.documentsAwaitingVerification ?? 0) + Number(stats.joiningPending ?? 0),
+    }),
+    [applications.length, stats],
+  );
+
+  const statCards = [
+    { key: "total", label: "Total Applications", value: counts.totalApplications, meta: "Across all open positions", icon: FileStack, variant: "blue", to: "/hr/submissions" },
+    { key: "new", label: "New Applications", value: counts.newApplications, meta: "Awaiting screening", icon: UserPlus, variant: "blue", to: "/hr/submissions" },
+    { key: "screening", label: "Under Screening", value: counts.underScreening, meta: "CV screening in progress", icon: UsersRound, variant: "orange", to: "/hr/ai-screening" },
+    { key: "shortlisted", label: "Shortlisted", value: counts.shortlisted, meta: "Ready for interview", icon: UserCheck, variant: "purple", to: "/hr/shortlisting" },
+    { key: "interviews", label: "Upcoming Interviews", value: counts.upcomingInterviews, meta: "Scheduled rounds ahead", icon: CalendarClock, variant: "orange", to: "/hr/interviews" },
+    { key: "selected", label: "Selected", value: counts.selected, meta: "Joined the organisation", icon: CheckCircle2, variant: "green", to: "/hr/final-selection" },
+    { key: "approvals", label: "Pending Approvals", value: counts.pendingApprovals, meta: "Awaiting admin decision", icon: ShieldCheck, variant: "orange", to: "/hr/approvals" },
+    { key: "offers", label: "Offers Sent", value: counts.offersSent, meta: "Issued to candidates", icon: Send, variant: "blue", to: "/hr/offers" },
+    { key: "awaiting-offer", label: "Awaiting Offer", value: counts.approvedAwaitingOffer, meta: "Approved, offer not prepared yet", icon: Inbox, variant: "orange", to: "/hr/offers" },
+    { key: "awaiting-response", label: "Offers Awaiting Response", value: counts.offersAwaitingResponse, meta: "Sent, candidate has not responded", icon: MailQuestion, variant: "blue", to: "/hr/offers" },
+    { key: "awaiting-documents", label: "Accepted, Docs Pending", value: counts.acceptedAwaitingDocuments, meta: "Document submission requested", icon: MailCheck, variant: "orange", to: "/hr/onboarding" },
+    { key: "docs-awaiting-verification", label: "Docs Awaiting Verification", value: counts.documentsAwaitingVerification, meta: "Submitted, HR to verify", icon: ShieldQuestion, variant: "blue", to: "/hr/onboarding" },
+    { key: "resubmission", label: "Resubmission Required", value: counts.documentsResubmissionRequired, meta: "Replacement document needed", icon: FileWarning, variant: "orange", to: "/hr/onboarding" },
+    { key: "joining-pending", label: "Joining Pending", value: counts.joiningPending, meta: "Not marked as joined yet", icon: UsersRound, variant: "orange", to: "/hr/onboarding" },
+    { key: "handed-over", label: "Employees Handed Over", value: counts.employeesHandedOver, meta: "Imported into the Employee Databank", icon: CheckCircle2, variant: "green", to: "/hr/onboarding" },
+    { key: "hr-pending", label: "HR Pending Actions", value: counts.hrPendingActions, meta: "Approvals, verifications and ready-to-join", icon: BellRing, variant: "purple", to: "/hr/approvals" },
   ];
 
-  const { funnelData, deptChart, pieData, areaData, topDepartments } = useMemo(() => {
-    const funnel = funnelStages.map((s) => ({
-      name: s.label,
-      value: pipeline.filter((a: any) => a.status === s.key).length,
-      fill: s.color,
-    }));
-    const dept = departments.slice(0, 10).map((d: any) => ({
-      name: d.name.length > 16 ? d.name.slice(0, 15) + "…" : d.name,
-      employees: Number(d.totalEmployees ?? 0),
-      openings: Number(d.activeOpenings ?? 0),
-    }));
-    const statusCounts: Record<string, number> = {};
-    pipeline.forEach((a: any) => { statusCounts[a.status] = (statusCounts[a.status] || 0) + 1; });
-    const pie = Object.entries(statusCounts).map(([name, value]) => ({ name: name.replace(/_/g, " "), value }));
-    const monthly: Record<string, number> = {};
-    pipeline.forEach((a: any) => {
-      const k = new Date(a.appliedAt).toLocaleString("en-US", { month: "short" });
-      monthly[k] = (monthly[k] || 0) + 1;
-    });
-    const area = Object.entries(monthly).map(([month, count]) => ({ month, count }));
-    const top = [...departments].sort((a, b) => Number(b.totalEmployees ?? 0) - Number(a.totalEmployees ?? 0)).slice(0, 8);
-    return { funnelData: funnel, deptChart: dept, pieData: pie, areaData: area, topDepartments: top };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pipeline, departments]);
+  const stageCounts = STAGES.map((stage) => ({ ...stage, count: stage.count(applications) }));
+  const maxStageCount = Math.max(...stageCounts.map((stage) => stage.count), 1);
+  const totalStage = stageCounts.reduce((sum, stage) => sum + stage.count, 0);
 
-  if (isLoading && !overview) {
-    return (
-      <div className="min-h-screen flex items-center justify-center surface-app">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-[#659616]/20 border-t-[#659616] rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm text-[var(--muted)]">Preparing your dashboard…</p>
-        </div>
-      </div>
-    );
-  }
-  if (!overview) return <div className="p-8 text-[var(--muted)]">No dashboard data available.</div>;
+  const departmentPipeline = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const application of applications) {
+      const department = application?.jobOpening?.department;
+      const id = department?.id ?? "unassigned";
+      const existing = map.get(id) ?? {
+        id,
+        name: department?.name ?? "Unassigned",
+        applied: 0,
+        screening: 0,
+        shortlisted: 0,
+        interview: 0,
+        finalSelection: 0,
+        approval: 0,
+        offer: 0,
+        joining: 0,
+        total: 0,
+      };
+      existing.applied += application.status === "APPLIED" ? 1 : 0;
+      existing.screening += ["UNDER_REVIEW", "AI_RECOMMENDED"].includes(application.status) ? 1 : 0;
+      existing.shortlisted += application.status === "SHORTLISTED" ? 1 : 0;
+      existing.interview += ["INTERVIEW_SCHEDULED", "INTERVIEW_COMPLETED"].includes(application.status) ? 1 : 0;
+      existing.finalSelection += application.status === "INTERVIEW_COMPLETED" ? 1 : 0;
+      existing.approval += application.status === "SELECTED" ? 1 : 0;
+      existing.offer += ["OFFER_SENT", "OFFER_ACCEPTED"].includes(application.status) ? 1 : 0;
+      existing.joining += ["DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW", "HIRED"].includes(application.status) ? 1 : 0;
+      existing.total += 1;
+      map.set(id, existing);
+    }
+    return Array.from(map.values()).sort((left, right) => right.total - left.total || String(left.name).localeCompare(String(right.name)));
+  }, [applications]);
+  const departmentMax = Math.max(...departmentPipeline.map((row) => row.total), 1);
+  const selectDepartment = (department: { id: string; name: string }) => {
+    setSelectedDepartment(department);
+    window.setTimeout(() => document.getElementById("department-people")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
+  const departmentColumns: Column<any>[] = [
+    {
+      key: "name",
+      header: "Department",
+      render: (department) => (
+        <button type="button" className={`ta-department-link ${selectedDepartment?.id === department.id ? "active" : ""}`} onClick={() => selectDepartment(department)}>
+          <span>{department.name}</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      ),
+    },
+    { key: "applied", header: "Applied", render: (department) => <span className="ta-dept-count">{department.applied}</span> },
+    { key: "screening", header: "Screening", render: (department) => <span className="ta-dept-count">{department.screening}</span> },
+    { key: "shortlisted", header: "Shortlisted", render: (department) => <span className="ta-dept-count">{department.shortlisted}</span> },
+    { key: "interview", header: "Interview", render: (department) => <span className="ta-dept-count">{department.interview}</span> },
+    { key: "finalSelection", header: "Final Selection", render: (department) => <span className="ta-dept-count">{department.finalSelection}</span> },
+    { key: "approval", header: "Approval", render: (department) => <span className="ta-dept-count">{department.approval}</span> },
+    { key: "offer", header: "Offer", render: (department) => <span className="ta-dept-count">{department.offer}</span> },
+    { key: "joining", header: "Joining", render: (department) => <span className="ta-dept-count">{department.joining}</span> },
+    { key: "total", header: "Total", render: (department) => <strong className="ta-dept-total">{department.total}</strong> },
+    { key: "action", header: "Action", className: "text-right", render: (department) => <button type="button" className="btn btn--outline btn--sm" onClick={() => selectDepartment(department)}>{selectedDepartment?.id === department.id ? "Viewing" : "View people"}</button> },
+  ];
+
+  const recentApplications = useMemo(
+    () => [...applications].sort((a, b) => new Date(b.appliedAt || b.createdAt || 0).getTime() - new Date(a.appliedAt || a.createdAt || 0).getTime()).slice(0, 6),
+    [applications],
+  );
+  const upcomingInterviews = useMemo(
+    () => interviews.filter((interview: any) => ["SCHEDULED", "RESCHEDULED"].includes(interview.status) && new Date(interview.scheduledAt).getTime() >= Date.now()).sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()).slice(0, 5),
+    [interviews],
+  );
+  const accepted = offers.filter((offer: any) => offer.status === "ACCEPTED").length;
+  const declined = offers.filter((offer: any) => offer.status === "DECLINED").length;
+  const responseTotal = accepted + declined;
+  const screened = applications.filter((application: any) => application.status !== "APPLIED").length;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-7 flex flex-col gap-6">
-      {/* ============ PAGE HEADER (Ashis-style) ============ */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <span className="page-eyebrow">Ecometrix · Talent Acquisition</span>
-          <h1 className="text-2xl sm:text-[1.7rem] font-extrabold tracking-tight leading-tight text-[var(--ink)]">
-            Recruitment Dashboard
-          </h1>
-          <p className="mt-1.5 text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
-            {timeGreeting()}, {user?.name?.split(" ")[0]}. Live overview of the recruitment pipeline, upcoming interviews and hiring activity.
-          </p>
+    <div className="page">
+      <PageHeader
+        eyebrow="Ecometrix · Talent Acquisition"
+        title="Recruitment Dashboard"
+        subtitle="Live overview of the recruitment pipeline, the upcoming interviews and the hiring activity of the HR team."
+        actions={<Badge variant="blue" dot>Cloud · Live database</Badge>}
+      />
+
+      <div className="stats-grid ta-stats-grid" aria-label="Recruitment statistics">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <button type="button" key={card.key} className={`stat-card stat-card--${card.variant}`} onClick={() => navigate(card.to)} aria-label={`View ${card.label}`}>
+              <div className={`stat-card__icon stat-card__icon--${card.variant}`}><Icon size={20} aria-hidden="true" /></div>
+              <div className="stat-card__content">
+                <div className="stat-card__label">{card.label}</div>
+                <div className="stat-card__value">{card.value}</div>
+                <div className="stat-card__meta">{card.meta}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="card">
+        <div className="card__header">
+          <div><div className="card__title">Recruitment pipeline</div><div className="card__subtitle">{totalStage} applications distributed across {STAGES.length} stages</div></div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap pt-1">
-          <Link to="/hr/ai-screening" className="btn-accent"><Sparkles size={16} />Run AI Screening</Link>
-          <Link to="/hr/openings" className="btn-outline"><Briefcase size={16} />Openings</Link>
+        <div className="card__body">
+          <ol className="ta-pipeline">
+            {stageCounts.map((stage) => (
+              <li className="ta-pipeline__stage" key={stage.key}>
+                <div className="ta-pipeline__button">
+                  <div className="ta-pipeline__stage-head"><span className="ta-pipeline__stage-label">{stage.label}</span><span className="ta-pipeline__stage-count">{stage.count}</span></div>
+                  <div className="ta-pipeline__track" aria-hidden="true"><span className="ta-pipeline__bar" style={{ width: `${Math.round((stage.count / maxStageCount) * 100)}%` }} /></div>
+                  <p className="ta-pipeline__stage-desc">{stage.description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
 
-      {/* ============ STAT CARDS ============ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard label="Total Employees" value={overview.totalEmployees} meta={`${overview.existingEmployees} existing · ${overview.formerEmployees} former`} icon={Users} to="/hr/employees" />
-        <StatCard label="Departments" value={overview.totalDepartments} meta="Browse department details" icon={Building2} variant="grey" to="/hr/departments" />
-        <StatCard label="Active Openings" value={overview.activeJobOpenings} meta={`${overview.closedJobOpenings} closed`} icon={Briefcase} variant="orange" to="/hr/openings" />
-        <StatCard label="Applications" value={overview.totalApplications} meta="All-time submissions" icon={FileStack} variant="grey" to="/hr/submissions" />
-        <StatCard label="Pipeline" value={overview.pipelineCandidates} meta={`${overview.candidatesOnHold} on hold`} icon={UsersRound} to="/hr/databank" />
-        <StatCard label="Shortlisted" value={overview.shortlistedCandidates} meta="Ready for interview" icon={Star} variant="orange" to="/hr/submissions" />
-        <StatCard label="Interviews" value={overview.interviewsScheduled} meta="Scheduled sessions" icon={CalendarClock} variant="grey" to="/hr/interviews" />
-        <StatCard label="Selected / Hired" value={`${overview.selectedCandidates} / ${overview.hiredEmployees}`} meta={`${overview.pendingOffers} offers pending`} icon={Target} to="/hr/offers" />
+      <div className="card">
+        <div className="card__header">
+          <div><div className="card__title">Department-wise pipeline</div><div className="card__subtitle">{departmentPipeline.length} departments in the pipeline · largest pipeline has {departmentMax} application{departmentMax === 1 ? "" : "s"}. Click a department to view every candidate in it.</div></div>
+        </div>
+        <DataTable
+          columns={departmentColumns}
+          rows={departmentPipeline}
+          rowKey={(department) => department.id}
+          loading={false}
+          empty={<EmptyStateBlock icon={FileStack} title="No department pipeline yet" description="Applications will appear here once candidates apply to department openings." />}
+          footer={<><span><strong>{applications.length}</strong> total application{applications.length === 1 ? "" : "s"}</span><span className="cell-muted">Select a department or View people to inspect every candidate and their full submitted details</span></>}
+          onRowClick={selectDepartment}
+        />
       </div>
 
-      {/* ============ CHART ROW ============ */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-5 mb-6">
-        <div className="card p-4 sm:p-6 xl:col-span-2">
-          <SectionTitle right={<span className="text-[10px] font-bold uppercase tracking-widest ink-muted">Live</span>}>
-            Recruitment Pipeline
-          </SectionTitle>
-          <div className="h-64 sm:h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={funnelData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,140,131,.25)" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} interval={0} angle={-16} textAnchor="end" height={52} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: "rgba(122,180,27,.08)" }} contentStyle={{ borderRadius: 14, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12, color: "var(--ink)" }} />
-                <Bar dataKey="value" name="Candidates" radius={[8, 8, 0, 0]} maxBarSize={54} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      <DepartmentPeoplePanel department={selectedDepartment} onClear={() => setSelectedDepartment(null)} />
 
-        <div className="card p-4 sm:p-6">
-          <SectionTitle>Status Mix</SectionTitle>
-          <div className="h-64 sm:h-72 flex items-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={52} outerRadius={84} paddingAngle={3} strokeWidth={2} stroke="var(--card)">
-                  {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: 14, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12, color: "var(--ink)" }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} layout="vertical" verticalAlign="middle" align="right" />
-              </PieChart>
-            </ResponsiveContainer>
+      <div className="ta-dashboard-grid">
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Recent applications</div><div className="card__subtitle">Latest applications received from the Career Portal</div></div><Link className="btn btn--ghost btn--sm" to="/hr/submissions">View all</Link></div>
+          <div className="card__body">
+            {recentApplications.length === 0 ? (
+              <EmptyStateBlock icon={FileStack} title="No applications yet" description="Applications submitted through the Career Portal appear here." />
+            ) : (
+              <ul className="ta-list">
+                {recentApplications.map((application: any) => (
+                  <li className="ta-list__item" key={application.id}>
+                    <div className="avatar avatar--sm">{initials(application.candidate?.fullName || "?")}</div>
+                    <div className="ta-list__body">
+                      <div className="ta-list__title">{application.candidate?.fullName || "Candidate"}</div>
+                      <div className="ta-list__meta">{application.jobOpening?.title || "Position"} · {formatDate(application.appliedAt || application.createdAt)}</div>
+                    </div>
+                    <Badge variant={statusMeta(application.status).variant} dot>{statusMeta(application.status).label}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
+        </section>
 
-        <div className="card p-4 sm:p-6 xl:col-span-2">
-          <SectionTitle>Applications Over Time</SectionTitle>
-          <div className="h-56 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={areaData} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#659616" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#659616" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(128,140,131,.25)" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: 14, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12, color: "var(--ink)" }} />
-                <Area type="monotone" dataKey="count" name="Applications" stroke="#659616" strokeWidth={2.5} fill="url(#areaGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Upcoming interviews</div><div className="card__subtitle">Scheduled rounds in the coming days</div></div><CalendarClock size={18} aria-hidden="true" /></div>
+          <div className="card__body">
+            {upcomingInterviews.length === 0 ? (
+              <EmptyStateBlock icon={CalendarClock} title="No interviews scheduled" description="Schedule an interview from the interview management page." />
+            ) : (
+              <ul className="ta-list">
+                {upcomingInterviews.map((interview: any) => (
+                  <li className="ta-list__item" key={interview.id}>
+                    <div className="ta-list__body">
+                      <div className="ta-list__title">{interview.application?.candidate?.fullName || "Candidate"} · {interview.round} round</div>
+                      <div className="ta-list__meta">{formatDateTime(interview.scheduledAt)} · {interview.interviewerName || "Interviewer"}</div>
+                    </div>
+                    <Badge variant="blue">{relativeDay(interview.scheduledAt)}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
-
-        <div className="card p-4 sm:p-6">
-          <SectionTitle>Workforce vs Openings</SectionTitle>
-          <div className="h-56 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={deptChart} layout="vertical" margin={{ top: 0, right: 10, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(128,140,131,.25)" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 10, fill: "var(--ink-soft)" }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: 14, border: "1px solid var(--border)", background: "var(--card)", fontSize: 12, color: "var(--ink)" }} />
-                <Bar dataKey="employees" name="Employees" fill="#659616" radius={[0, 6, 6, 0]} barSize={10} />
-                <Bar dataKey="openings" name="Openings" fill="#FF9412" radius={[0, 6, 6, 0]} barSize={10} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        </section>
       </div>
 
-      {/* ============ DEPARTMENT DRILL-DOWN TABLE ============ */}
-      <div className="card p-4 sm:p-6 overflow-hidden">
-        <SectionTitle right={<Link to="/hr/departments" className="text-xs font-bold text-[#659616] hover:underline">View all →</Link>}>
-          Department Pipeline
-        </SectionTitle>
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
-          <table className="table min-w-[640px]">
-            <thead>
-              <tr><th>Department</th><th>Employees</th><th>Openings</th><th>Applicants</th><th className="text-right">Drill down</th></tr>
-            </thead>
-            <tbody>
-              {topDepartments.map((d: any) => (
-                <tr
-                  key={d.id}
-                  onClick={() => navigate(`/hr/departments/${d.id}`)}
-                  className="cursor-pointer hover:bg-[rgba(122,180,27,.06)] transition-colors"
-                >
-                  <td className="font-semibold text-[var(--ink)]">{d.name}</td>
-                  <td><span className="badge badge-green">{Number(d.totalEmployees ?? 0)}</span></td>
-                  <td><span className="badge badge-orange">{Number(d.activeOpenings ?? 0)}</span></td>
-                  <td className="ink-soft">{Number(d.totalApplicants ?? 0)}</td>
-                  <td className="text-right text-xs font-bold text-[#659616]">Open →</td>
-                </tr>
+      <div className="ta-dashboard-grid">
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Recruitment stage distribution</div><div className="card__subtitle">{totalStage} applications across the recruitment stages</div></div><Activity size={18} aria-hidden="true" /></div>
+          <div className="card__body">
+            <ul className="ta-bar-list">
+              {stageCounts.map((stage) => (
+                <li className="ta-bar-list__item" key={stage.key}>
+                  <div className="ta-bar-list__head"><span className="ta-bar-list__label">{stage.label}</span><span className="ta-bar-list__value">{stage.count}<span className="ta-bar-list__share">{totalStage ? `${Math.round((stage.count / totalStage) * 100)}%` : "0%"}</span></span></div>
+                  <div className="ta-bar-list__track" aria-hidden="true"><span className="ta-bar-list__bar" style={{ width: `${Math.round((stage.count / maxStageCount) * 100)}%` }} /></div>
+                </li>
               ))}
-              {topDepartments.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 ink-muted">No departments yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Recent HR activity</div><div className="card__subtitle">Workflow events recorded by the backend</div></div><Activity size={18} aria-hidden="true" /></div>
+          <div className="card__body">
+            {auditLogs.length === 0 ? (
+              <EmptyStateBlock icon={Activity} title="No activity recorded" description="Workflow events will appear here as the recruitment progresses." />
+            ) : (
+              <ul className="ta-activity">
+                {auditLogs.map((log: any) => (
+                  <li className="ta-activity__item" key={log.id}>
+                    <span className="ta-activity__dot ta-activity__dot--interview" aria-hidden="true" />
+                    <div className="ta-activity__body">
+                      <div className="ta-activity__message">{log.action?.replace(/_/g, " ") || "HR activity"}</div>
+                      <div className="ta-activity__meta">{formatDateTime(log.createdAt)}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
       </div>
+
+      <div className="ta-dashboard-grid">
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Recent email activity</div><div className="card__subtitle">Offer letters, interview invitations and onboarding emails recorded by the service.</div></div><MailQuestion size={18} aria-hidden="true" /></div>
+          <div className="card__body">
+            {emailLogs.length === 0 ? (
+              <EmptyStateBlock icon={MailQuestion} title="No emails recorded yet" description="Outbound emails appear here once the configured provider sends or simulates them." />
+            ) : (
+              <ul className="ta-activity">
+                {emailLogs.map((email: any) => (
+                  <li className="ta-activity__item" key={email.id}>
+                    <span className="ta-activity__dot ta-activity__dot--offer" aria-hidden="true" />
+                    <div className="ta-activity__body">
+                      <div className="ta-activity__message">{email.templateKey ? email.templateKey.replace(/_/g, " ") : email.subject} to {email.toEmail} <Badge variant={email.status === "SENT" ? "green" : "orange"}>{email.status}</Badge></div>
+                      <div className="ta-activity__meta">{formatDateTime(email.createdAt)}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card__header"><div><div className="card__title">Candidate responses</div><div className="card__subtitle">Recorded through the candidate self-service links</div></div><MailCheck size={18} aria-hidden="true" /></div>
+          <div className="card__body">
+            <div className="ta-summary-grid">
+              <div className="ta-summary__item"><div className="ta-summary__label">Offers accepted</div><div className="ta-summary__value">{accepted}</div></div>
+              <div className="ta-summary__item"><div className="ta-summary__label">Offers declined</div><div className="ta-summary__value">{declined}</div></div>
+              <div className="ta-summary__item"><div className="ta-summary__label">Offers sent</div><div className="ta-summary__value">{counts.offersSent}</div></div>
+              <div className="ta-summary__item"><div className="ta-summary__label">Acceptance rate</div><div className="ta-summary__value">{responseTotal ? Math.round((accepted / responseTotal) * 100) : 0}%</div></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="card">
+        <div className="card__header"><div><div className="card__title">Hiring summary</div><div className="card__subtitle">Derived from the live recruitment records in the cloud database</div></div><Gauge size={18} aria-hidden="true" /></div>
+        <div className="card__body">
+          <div className="ta-summary-grid">
+            <div className="ta-summary__item"><div className="ta-summary__label">Applications received</div><div className="ta-summary__value">{counts.totalApplications}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Screening completed</div><div className="ta-summary__value">{screened}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Shortlisted</div><div className="ta-summary__value">{counts.shortlisted}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Offers sent</div><div className="ta-summary__value">{counts.offersSent}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Selected candidates</div><div className="ta-summary__value">{counts.selected}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Joining pending</div><div className="ta-summary__value">{counts.joiningPending}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">Employees handed over</div><div className="ta-summary__value">{counts.employeesHandedOver}</div></div>
+            <div className="ta-summary__item"><div className="ta-summary__label">HR pending actions</div><div className="ta-summary__value">{counts.hrPendingActions}</div></div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

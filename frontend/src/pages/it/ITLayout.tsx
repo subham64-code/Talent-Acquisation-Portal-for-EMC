@@ -98,7 +98,7 @@ export default function ITLayout() {
   );
 
   return (
-    <div className="min-h-screen flex bg-[#f6f8f2]">
+    <div className="h-screen flex overflow-hidden bg-[#f6f8f2]">
       {/* Desktop sidebar */}
       <div className="hidden lg:block fixed left-0 top-0 h-full w-72 z-40">{sidebar}</div>
 
@@ -152,7 +152,7 @@ export default function ITLayout() {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="max-w-[1400px] mx-auto w-full">
             <Outlet />
           </div>

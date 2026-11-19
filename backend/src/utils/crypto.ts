@@ -68,3 +68,8 @@ export function passwordStrengthError(password: string): string | null {
   }
   return null;
 }
+
+export function contentDispositionFilename(name: string, disposition: "inline" | "attachment" = "attachment"): string {
+  const ascii = name.normalize("NFKD").replace(/[\x00-\x1f\x7f"\\]/g, "_").replace(/[^\x20-\x7e]/g, "_").slice(-140) || "file";
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name.normalize("NFKD").replace(/[\r\n]/g, "_"))}`;
+}

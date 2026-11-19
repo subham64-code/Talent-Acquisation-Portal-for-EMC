@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ClipboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Mail, IdCard, Shield, Eye, EyeOff, Lock } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { authApi } from "../../lib/api";
@@ -7,7 +7,8 @@ import { authApi } from "../../lib/api";
 type Role = "ADMIN" | "HR";
 
 export default function HRLogin() {
-  const [selectedRole, setSelectedRole] = useState<Role>("HR");
+  const [searchParams] = useSearchParams();
+  const [selectedRole, setSelectedRole] = useState<Role>(() => searchParams.get("role")?.toLowerCase() === "admin" ? "ADMIN" : "HR");
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));

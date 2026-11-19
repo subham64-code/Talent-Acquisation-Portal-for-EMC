@@ -1,289 +1,166 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { hrApi } from "../../lib/api";
+import { ArrowRight, BriefcaseBusiness, ChevronDown, Heart, Leaf, Mail, MapPin, Phone, Search, Send, ShieldCheck, UsersRound } from "lucide-react";
 import Logo from "../../components/Logo";
+import { hrApi } from "../../lib/api";
 
 export default function Home() {
+  const navigate = useNavigate();
   const [openings, setOpenings] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-  const topRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [backTopVisible, setBackTopVisible] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+
 
   useEffect(() => {
-    Promise.all([
-      hrApi.publicOpenings({ pageSize: 6 }).then((r: any) => {
-        setOpenings(Array.isArray(r?.data?.items) ? r.data.items : []);
-      }).catch(() => setOpenings([])),
-      hrApi.publicDepartments().then((r: any) => {
-        const deps = Array.isArray(r?.data?.departments) ? r.data.departments : Array.isArray(r?.data?.items) ? r.data.items : [];
-        setDepartments(deps);
-      }).catch(() => setDepartments([])),
-    ]).finally(() => setLoading(false));
+    Promise.allSettled([
+      hrApi.publicOpenings({ pageSize: 12 }),
+      hrApi.publicDepartments(),
+    ]).then(([jobsResult, departmentsResult]) => {
+      const jobsPayload = jobsResult.status === "fulfilled" ? jobsResult.value?.data : null;
+      const departmentPayload = departmentsResult.status === "fulfilled" ? departmentsResult.value?.data : null;
+      setOpenings(Array.isArray(jobsPayload?.items) ? jobsPayload.items : []);
+      const nextDepartments = Array.isArray(departmentPayload?.departments) ? departmentPayload.departments : Array.isArray(departmentPayload?.items) ? departmentPayload.items : [];
+      setDepartments(nextDepartments);
+    }).finally(() => setLoading(false));
   }, []);
 
-  const scrollTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  useEffect(() => {
+    const onScroll = () => setBackTopVisible(window.scrollY > 250);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const filteredOpenings = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return openings.filter((job) => {
+      const matchesDepartment = !departmentId || (job.departmentId ?? job.department?.id) === departmentId;
+      const matchesSearch = !needle || [job.title, job.department?.name, job.location, job.status, ...(job.requiredSkills ?? [])]
+        .filter(Boolean).some((value) => String(value).toLowerCase().includes(needle));
+      return matchesDepartment && matchesSearch;
+    });
+  }, [openings, search, departmentId]);
+
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <div ref={topRef} className="min-h-screen surface-app public-light ink-body flex flex-col">
-      {/* WELCOME ANNOUNCEMENT — floating marquee */}
-      <div className="announcement-bar bg-gradient-to-r from-[#38570A] via-[#4C730D] to-[#38570A] text-white text-[11px] sm:text-xs font-semibold tracking-wide py-1.5 border-b border-white/10 overflow-hidden select-none" role="status" aria-live="polite">
-        <div className="announcement-track">
-          {[0, 1].map((n) => (
-            <span key={n} className="pr-16">
-              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
-              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
-              <span className="text-[#8BC34A]">★</span> Welcome to Ecometrics Consultant Pvt. Ltd. – Talent Acquisition Portal <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
-              Explore careers in GIS, Civil, Water, Telecom, R&amp;D and more <span className="text-[#FF9412]">•</span>&nbsp;&nbsp;
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* NAVBAR */}
-      <nav className="surface-ink sticky top-0 z-40 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <Link to="/career" className="flex items-center gap-2 shrink-0">
-              <Logo size={28}  onDark />
-              <span className="hidden min-[400px]:inline font-bold text-base sm:text-xl text-white tracking-tight">
-                EMC<span className="text-[#FF9412]">.</span> Talent
-              </span>
-            </Link>
-
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <Link
-                to="/careers/apply"
-                className="px-3.5 sm:px-6 py-2 sm:py-2.5 rounded-lg bg-[#FF9412] text-white text-xs sm:text-sm font-extrabold tracking-wide hover:bg-orange-600 transition-colors whitespace-nowrap shadow-[0_4px_14px_rgba(255,148,18,.4)]"
-              >
-                APPLY NOW
-              </Link>
-              <Link
-                to="/auth/hr/login"
-                className="px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg border border-white/25 text-white text-xs sm:text-sm font-semibold hover:bg-white/10 transition-colors whitespace-nowrap"
-              >
-                HR Login
-              </Link>
-            </div>
+    <div className="corporate-site min-h-screen">
+      <header className="corporate-header">
+        <div className="corporate-header__inner">
+          <Link to="/career" className="corporate-logo" aria-label="Ecometrix home"><Logo size={46} /></Link>
+          <nav className="corporate-nav" aria-label="Corporate navigation">
+            <a className="corporate-nav__link" href="#positions">Home</a>
+            <a className="corporate-nav__link" href="#voices">About Us</a>
+            <a className="corporate-nav__link" href="#voices">Our Services</a>
+            <a className="corporate-nav__link" href="#voices">Delivery Experience</a>
+            <a className="corporate-nav__link" href="#voices">Our People <ChevronDown size={13} aria-hidden="true" /></a>
+            <a className="corporate-nav__link active" href="#positions" aria-current="page">Careers</a>
+            <a className="corporate-nav__link" href="mailto:info@ecometrix.co.in">Contact</a>
+          </nav>
+          <div className="corporate-tools" aria-label="Corporate tools">
+            <Link to="/auth/hr/login" className="corporate-tool">EMCOne</Link>
+            <button type="button" className="corporate-tool" onClick={() => navigate("/careers/jobs")} aria-label="Open jobs search"><Search size={15} aria-hidden="true" /></button>
+            <a className="corporate-connect" href="mailto:info@ecometrix.co.in">Let’s Connect <ArrowRight size={13} aria-hidden="true" /></a>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* HERO */}
-      <section id="top" className="surface-ink text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-          <div className="grid lg:grid-cols-2 gap-10 items-center">
-            <div>
-              <span className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-[#FF9412] mb-4">
-                <span className="w-6 h-[3px] bg-[#FF9412] inline-block" /> Talent Acquisition
-              </span>
-              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold leading-tight mb-5">
-                Careers at <span className="text-[#8BC34A]">EMC</span>
-              </h1>
-              <p className="text-[#C9D1CC] text-base sm:text-lg leading-relaxed mb-8 max-w-xl">
-                Join Ecometrics Consultant Pvt. Ltd. and help shape tomorrow&apos;s infrastructure through
-                planning, design, GIS, water, telecom and project management expertise.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => scrollTo("positions")}
-                  className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors"
-                >
-                  Open Positions
-                </button>
-                <button
-                  onClick={() => navigate("/careers/apply")}
-                  className="px-6 py-3 rounded-lg bg-[#659616] text-white font-semibold text-sm hover:bg-[#4C730D] transition-colors"
-                >
-                  Apply Now
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {[
-                { label: "Departments", value: departments.length },
-                { label: "Open Positions", value: openings.length },
-                { label: "Years of Excellence", value: "15+" },
-                { label: "Projects Delivered", value: "400+" },
-              ].map((s) => (
-                <div key={s.label} className="rounded-xl border border-white/10 bg-white/5 p-4 sm:p-5">
-                  <p className="text-2xl sm:text-3xl font-extrabold text-[#8BC34A]">{s.value}</p>
-                  <p className="text-xs uppercase tracking-wider text-[#C9D1CC] mt-1">{s.label}</p>
-                </div>
-              ))}
-            </div>
+      <section className="careers-hero" aria-labelledby="careers-title">
+        <div className="careers-hero__inner">
+          <div className="careers-kicker">Careers at Ecometrix</div>
+          <h1 className="careers-title" id="careers-title">Build Your Career for a <span>Better Tomorrow</span></h1>
+          <p className="careers-lead">Join a team that’s shaping resilient cities, sustainable infrastructure and a healthier planet.</p>
+          <div className="careers-actions">
+            <button type="button" className="careers-primary" onClick={() => scrollTo("positions")}>Explore Opportunities <ArrowRight size={16} aria-hidden="true" /></button>
+            <button type="button" className="careers-secondary" onClick={() => scrollTo("voices")}>Life at Ecometrix</button>
           </div>
         </div>
       </section>
 
-      {/* OPEN POSITIONS */}
-      <section id="positions" className="py-14 sm:py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold ink-body mb-1">Open Positions</h2>
-              <p className="ink-soft text-sm">
-                {loading ? "Loading current openings…" : `${openings.length} active opportunities across EMC.`}
-              </p>
-            </div>
-            <button
-              onClick={() => navigate("/careers/jobs")}
-              className="px-5 py-2.5 rounded-lg border border-[#659616]/40 text-[#659616] font-semibold text-sm hover:bg-[#659616]/10 transition-colors self-start"
-            >
-              View all jobs →
-            </button>
+      <main id="positions" className="openings-section">
+        <div className="section-container">
+          <div className="section-head">
+            <div><div className="section-head__kicker">Open Positions</div><h2>Current Opportunities</h2></div>
+            <p>Explore exciting career opportunities across engineering, planning, environment, GIS, digital solutions and more.</p>
           </div>
-
-          {loading ? (
-            <div className="h-64 flex items-center justify-center ink-soft">Loading openings…</div>
-          ) : openings.length === 0 ? (
-            <div className="card p-10 text-center">
-              <p className="ink-soft mb-4">No open positions at the moment.</p>
-              <button onClick={() => navigate("/careers/jobs")} className="btn-primary">Browse Careers</button>
-            </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {openings.map((o: any) => (
-                <div key={o.id} className="card p-5 flex flex-col">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <h3 className="font-bold ink-body leading-snug">{o.title}</h3>
-                    <span className="shrink-0 badge border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80">
-                      {o.positions} open
-                    </span>
-                  </div>
-                  <p className="text-xs ink-soft mb-3">
-                    {o.department?.name} · {o.location}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {(o.requiredSkills || []).slice(0, 3).map((s: string) => (
-                      <span key={s} className="text-[10px] px-2 py-0.5 rounded bg-[#FF9412]/10 text-[#FF9412] font-semibold">{s}</span>
-                    ))}
-                  </div>
-                  <div className="mt-auto flex gap-2">
-                    <Link to={`/careers/jobs/${o.id}`} className="flex-1 btn-primary text-center">View & Apply</Link>
-                    <Link
-                      to="/careers/jobs"
-                      className="px-4 py-2.5 rounded-lg border border-[#171717]/15 ink-body text-sm font-medium hover:bg-[#171717]/5 transition-colors"
-                    >
-                      Details
+          <div className="careers-layout">
+            <div>
+              <div className="careers-search-row">
+                <label className="careers-search"><Search size={19} aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search jobs, skills, departments..." aria-label="Search open positions" /></label>
+                <span className="careers-count" aria-live="polite">{loading ? "Loading…" : `Showing ${filteredOpenings.length} roles`}</span>
+              </div>
+              <div className="careers-chips" aria-label="Department filters">
+                <button className={`careers-chip ${departmentId === "" ? "active" : ""}`} onClick={() => setDepartmentId("")}>All</button>
+                {departments.slice(0, 8).map((department: any) => <button className={`careers-chip ${departmentId === department.id ? "active" : ""}`} key={department.id} onClick={() => setDepartmentId(department.id)}>{department.name}</button>)}
+              </div>
+              {loading ? <div className="why-card">Loading current opportunities…</div> : filteredOpenings.length === 0 ? (
+                <div className="why-card" aria-live="polite"><h3 className="text-lg font-bold text-[#111a30]">No open positions matching your filter.</h3><p>Try another search term or department, or send your CV directly to our recruitment team.</p><button className="careers-primary mt-4" onClick={() => { setSearch(""); setDepartmentId(""); }}>Clear filters</button></div>
+              ) : (
+                <div aria-live="polite">
+                  {filteredOpenings.map((job) => (
+                    <Link to={`/careers/jobs/${job.id}`} className="job-card" key={job.id} aria-label={`View details for ${job.title}`}>
+                      <span className="job-card__icon"><BriefcaseBusiness size={24} aria-hidden="true" /></span>
+                      <span>
+                        <span className="job-card__title">{job.title}</span>
+                        <span className="job-card__meta"><MapPin size={12} className="inline" aria-hidden="true" /> {job.location || "Location update on request"} · Posted {job.createdAt ? new Date(job.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "recently"}</span>
+                        <span className="job-card__tags"><span className="job-card__tag">{job.department?.name || "Engineering"}</span><span className="job-card__tag">{job.employmentType?.name || "Full-time"}</span>{(job.requiredSkills ?? []).slice(0, 2).map((skill: string) => <span key={skill} className="job-card__tag">{skill}</span>)}</span>
+                      </span>
+                      <span className="job-card__action">View Details</span>
                     </Link>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
+              <div className="cv-cta"><span className="cv-cta__icon"><Mail size={22} aria-hidden="true" /></span><span><strong>Don’t see a suitable role?</strong><small>We’re always open to talented individuals. Share your CV with us.</small></span><a href="mailto:info@ecometrix.co.in?subject=CV%20for%20Expression%20of%20Interest">Send Your CV <ArrowRight size={13} aria-hidden="true" /></a></div>
             </div>
-          )}
+            <aside className="why-card" aria-label="Why join Ecometrix">
+              <h3>Why Join Ecometrix?</h3>
+              <p>At Ecometrix, you’ll work on diverse projects that create lasting impact — from water and environment to smart cities and digital innovation.</p>
+              <div>{[{ icon: ShieldCheck, title: "Impactful Projects", text: "Solve real challenges that shape cities and communities." },{ icon: UsersRound, title: "Learning & Development", text: "Grow with cross-functional mentors and structured exposure." },{ icon: Leaf, title: "Collaborative Team", text: "Engineers, planners, analysts and designers working together." },{ icon: Heart, title: "Employee Wellbeing", text: "A people-first culture built around respect and balance." }].map(({ icon: Icon, title, text }) => <div className="why-item" key={title}><span className="why-item__icon"><Icon size={21} aria-hidden="true" /></span><span><strong>{title}</strong><small>{text}</small></span></div>)}</div>
+            </aside>
+          </div>
         </div>
-      </section>
+      </main>
 
-      {/* ABOUT */}
-      <section id="about" className="py-14 sm:py-20 bg-[#171717] text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid lg:grid-cols-2 gap-10 items-center">
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Logo size={34}  onDark />
-              <span className="text-xl font-bold text-white">EMC<span className="text-[#FF9412]">.</span></span>
+      <section id="voices" className="voices">
+        <div className="section-container">
+          <div className="voices__box">
+            <div className="voices__text">
+              <div className="section-head__kicker">Our People, Our Strength</div>
+              <h2 className="section-head h2 text-3xl font-bold text-[#111a30] mt-2">Voices from Our Team</h2>
+              <p className="voices__quote">“Every day at Ecometrix is different. We don’t just deliver projects; we create lasting impact for people and the planet.”</p>
+              <div className="voices__person"><span className="voices__avatar">ET</span><span><span className="voices__name">Ecometrix Team Member</span><span className="block voices__role">Project Delivery</span></span></div>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold mb-4">About EMC</h2>
-            <p className="text-[#C9D1CC] leading-relaxed mb-5">
-              Ecometrics Consultant Pvt. Ltd. (EMC) is a multi-disciplinary engineering consultancy
-              delivering planning, design, and project management services across urban infrastructure,
-              water supply, GIS, telecom, drainage and transportation.
-            </p>
-            <p className="text-[#C9D1CC] leading-relaxed mb-7">
-              Our Talent Acquisition Portal centralises the complete employee and recruitment lifecycle —
-              from CV databank and vacancy management through AI-assisted screening, interviews, offers
-              and document verification — so every decision is traceable and every record is secure.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <button onClick={() => scrollTo("positions")} className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
-                Explore Careers
-              </button>
-              <button onClick={() => scrollTo("contact")} className="px-6 py-3 rounded-lg border border-white/25 text-white font-semibold text-sm hover:bg-white/10 transition-colors">
-                Contact Us
-              </button>
-            </div>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {[
-              { t: "Unlocking Transformation", d: "Our tagline — turning data into infrastructure decisions." },
-              { t: "Centralised CV Databank", d: "Employees, alumni and candidates in one searchable repository." },
-              { t: "Explainable AI Screening", d: "Transparent, weighted scoring that HR can review and override." },
-              { t: "Secure Document Workflow", d: "Role-based access, audit trails and expiring secure links." },
-            ].map((f) => (
-              <div key={f.t} className="rounded-xl border border-white/10 bg-white/5 p-5">
-                <h3 className="font-semibold text-[#8BC34A] mb-1.5 text-sm">{f.t}</h3>
-                <p className="text-[#C9D1CC] text-xs leading-relaxed">{f.d}</p>
-              </div>
-            ))}
+            <div className="voices__block"><strong>Great People.</strong><span>Greater Impact.</span></div>
           </div>
         </div>
       </section>
 
-      {/* DEPARTMENTS */}
-      <section id="departments" className="py-14 sm:py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold ink-body mb-2">Our Departments</h2>
-          <p className="ink-soft text-sm mb-8">Specialist teams working across every project discipline.</p>
-          <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {departments.map((d: any) => (
-              <div key={d.id} className="rounded-lg border border-[#171717]/10 surface-card px-4 py-3 text-sm font-medium ink-body hover:border-[#659616]/50 transition-colors">
-                {d.name}
-              </div>
-            ))}
-            {departments.length === 0 && (
-              <div className="col-span-full rounded-lg border border-dashed border-[#171717]/15 px-4 py-8 text-center ink-soft text-sm">
-                Departments will appear here once they are set up by EMC HR.
-              </div>
-            )}
+      <footer className="corporate-footer">
+        <div className="footer-grid">
+          <div className="footer-card">
+            <Logo size={52} />
+            <p className="footer-address"><MapPin size={17} aria-hidden="true" /><span>Unit 402, Mi Towers,<br />Pune, Maharashtra 411001</span></p>
+            <p className="footer-address"><Phone size={17} aria-hidden="true" /><span>+91 22 0000 0000</span></p>
+            <p className="footer-address"><Mail size={17} aria-hidden="true" /><span>info@ecometrix.co.in</span></p>
           </div>
+          <nav className="footer-nav" aria-label="Footer navigation">
+            <a href="#positions">Home</a><a href="#voices">About Us</a><a href="#voices">Our Services</a><a href="#voices">Delivery Experience</a><a href="#voices">Our People</a><a href="#positions">Careers</a><a href="mailto:info@ecometrix.co.in">Contact</a><Link to="/auth/hr/login">EMCOne</Link>
+          </nav>
+          <div className="subscribe"><h3>Career updates</h3><p>Write to our recruitment team to stay informed about suitable openings.</p><a className="btn" href="mailto:info@ecometrix.co.in?subject=Career%20updates">Request updates <Send size={15} aria-hidden="true" /></a></div>
         </div>
-      </section>
-
-      {/* CONTACT */}
-      <section id="contact" className="py-14 sm:py-20 bg-[#659616] text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="text-2xl sm:text-3xl font-bold mb-8">Contact EMC</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {[
-              { l: "HR Email", v: "subhambehera2023@gift.edu.in" },
-              { l: "Phone", v: "+91 22 0000 0000" },
-              { l: "Office", v: "Pune, Maharashtra, India" },
-              { l: "Working Hours", v: "Mon–Fri, 9:30 AM – 6:30 PM IST" },
-            ].map((c) => (
-              <div key={c.l} className="rounded-xl bg-white/10 border border-white/15 p-5">
-                <p className="text-xs uppercase tracking-wider text-white/70 mb-1.5">{c.l}</p>
-                <p className="font-semibold text-sm break-words">{c.v}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/careers/apply" className="px-6 py-3 rounded-lg bg-[#FF9412] text-white font-semibold text-sm hover:bg-orange-600 transition-colors">
-              Apply for a Job
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="surface-ink text-[#C9D1CC] py-8 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <Logo size={26}  onDark />
-            <span className="font-bold text-white">EMC<span className="text-[#FF9412]">.</span> Talent Acquisition Portal</span>
-          </div>
-          <div className="flex flex-wrap gap-5">
-            <Link to="/career" className="hover:text-white">Careers</Link>
-            <Link to="/careers/jobs" className="hover:text-white">Jobs</Link>
-            <Link to="/careers/apply" className="hover:text-white">Apply Now</Link>
-            <Link to="/auth/hr/login" className="hover:text-white">HR Portal</Link>
-          </div>
-          <p className="text-xs text-white/40">© {new Date().getFullYear()} Ecometrics Consultant Pvt. Ltd.</p>
-        </div>
+        <div className="footer-divider"><span className="text-xs text-[#7c879d]">© {new Date().getFullYear()} Ecometrix Consultants Private Limited.</span></div>
       </footer>
+
+      <button type="button" className="quick-help" onClick={() => setHelpOpen((current) => !current)} aria-expanded={helpOpen} aria-label="Quick help">Quick Help <span aria-hidden="true">ϟ</span></button>
+      {helpOpen && <div className="chatbot-fab" style={{ bottom: "150px" }} role="dialog" aria-label="Quick help"><span className="status-dot" aria-hidden="true" /><small>Quick help</small><span>Need assistance with your application? Contact HR.</span></div>}
+      <button type="button" className="chatbot-fab" onClick={() => setChatOpen((current) => !current)} aria-expanded={chatOpen} aria-label="Open support chat"><span className="status-dot" aria-hidden="true" /><small>Need help? We’re here</small><span>{chatOpen ? "Close support" : "Hi there! 👋"}</span></button>
+      {chatOpen && <div className="chatbot-fab" style={{ bottom: "82px" }} role="status"><span className="status-dot" aria-hidden="true" /><small>Support</small><span>HR team: info@ecometrix.co.in</span></div>}
+      {backTopVisible && <button type="button" className="back-top" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Back to top">↑</button>}
     </div>
   );
 }

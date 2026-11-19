@@ -26,14 +26,27 @@ router.get(
             (SELECT count(*)::int FROM emc_talent.job_openings WHERE status = 'CLOSED') AS "closedJobOpenings",
             (SELECT count(*)::int FROM emc_talent.applications) AS "totalApplications",
             (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'SHORTLISTED') AS "shortlistedCandidates",
-            (SELECT count(*)::int FROM emc_talent.interviews WHERE status = 'SCHEDULED') AS "interviewsScheduled",
+            (SELECT count(*)::int FROM emc_talent.interviews WHERE status IN ('SCHEDULED','RESCHEDULED')) AS "interviewsScheduled",
             (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'SELECTED') AS "selectedCandidates",
             (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'REJECTED') AS "rejectedCandidates",
             (SELECT count(*)::int FROM emc_talent.offer_letters WHERE status = 'SENT') AS "pendingOffers",
             (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'HIRED') AS "hiredEmployees",
             (SELECT count(*)::int FROM emc_talent.candidate_documents WHERE status <> 'ACCEPTED') AS "pendingDocumentVerification",
             (SELECT count(*)::int FROM emc_talent.candidates) AS "pipelineCandidates",
-            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'ON_HOLD') AS "candidatesOnHold"
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'ON_HOLD') AS "candidatesOnHold",
+            (SELECT count(*)::int FROM emc_talent.employee_update_invitations WHERE "usedAt" IS NULL) AS "pendingInvitations",
+            (SELECT count(*)::int FROM emc_talent.employee_update_invitations WHERE submission IS NOT NULL AND ("submissionStatus" IS NULL OR "submissionStatus" = 'PENDING')) AS "pendingSubmissions",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'APPLIED') AS "newApplications",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status IN ('UNDER_REVIEW','AI_RECOMMENDED')) AS "underScreening",
+            (SELECT count(*)::int FROM emc_talent.interviews WHERE status IN ('SCHEDULED','RESCHEDULED') AND "scheduledAt" >= now()) AS "upcomingInterviews",
+            (SELECT count(*)::int FROM emc_talent.applications a WHERE a.status = 'SELECTED' AND NOT EXISTS (SELECT 1 FROM emc_talent.offer_letters o WHERE o."applicationId" = a.id)) AS "pendingApprovals",
+            (SELECT count(*)::int FROM emc_talent.offer_letters WHERE status = 'SENT') AS "offersSentOverview",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'OFFER_SENT') AS "offersAwaitingResponse",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'DOCUMENTS_PENDING') AS "acceptedAwaitingDocuments",
+            (SELECT count(*)::int FROM emc_talent.candidate_documents WHERE status IN ('UPLOADED','UNDER_REVIEW')) AS "documentsAwaitingVerification",
+            (SELECT count(*)::int FROM emc_talent.candidate_documents WHERE status = 'REUPLOAD_REQUIRED') AS "documentsResubmissionRequired",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status IN ('OFFER_ACCEPTED','DOCUMENTS_PENDING','DOCUMENTS_UNDER_REVIEW')) AS "joiningPending",
+            (SELECT count(*)::int FROM emc_talent.applications WHERE status = 'HIRED') AS "employeesHandedOver"
         `;
         const raw = Array.isArray(rows) ? rows[0] : rows;
         return {
@@ -53,6 +66,19 @@ router.get(
           pendingDocumentVerification: raw.pendingDocumentVerification,
           pipelineCandidates: raw.pipelineCandidates,
           candidatesOnHold: raw.candidatesOnHold,
+          pendingInvitations: raw.pendingInvitations,
+          pendingSubmissions: raw.pendingSubmissions,
+          newApplications: raw.newApplications,
+          underScreening: raw.underScreening,
+          upcomingInterviews: raw.upcomingInterviews,
+          pendingApprovals: raw.pendingApprovals,
+          offersSentCount: raw.offersSentOverview,
+          offersAwaitingResponse: raw.offersAwaitingResponse,
+          acceptedAwaitingDocuments: raw.acceptedAwaitingDocuments,
+          documentsAwaitingVerification: raw.documentsAwaitingVerification,
+          documentsResubmissionRequired: raw.documentsResubmissionRequired,
+          joiningPending: raw.joiningPending,
+          employeesHandedOver: raw.employeesHandedOver,
         };
       });
       return ok(res, data);
@@ -74,7 +100,18 @@ router.get(
           (SELECT count(*)::int FROM emc_talent.job_openings o WHERE o."departmentId" = d.id AND o.status = 'PUBLISHED') AS "activeOpenings",
           (SELECT count(*)::int FROM emc_talent.applications a
              JOIN emc_talent.job_openings o ON o.id = a."jobOpeningId"
-             WHERE o."departmentId" = d.id) AS "totalApplicants"
+             WHERE o."departmentId" = d.id) AS "totalApplicants",
+          (SELECT count(*)::int FROM emc_talent.applications a
+             JOIN emc_talent.job_openings o ON o.id = a."jobOpeningId"
+             WHERE o."departmentId" = d.id
+               AND a.status IN ('SHORTLISTED','INTERVIEW_SCHEDULED','INTERVIEWED','SELECTED','OFFERED','HIRED')) AS "screened",
+          (SELECT count(*)::int FROM emc_talent.interviews i
+             JOIN emc_talent.applications a ON a.id = i."applicationId"
+             JOIN emc_talent.job_openings o ON o.id = a."jobOpeningId"
+             WHERE o."departmentId" = d.id) AS "interviews",
+          (SELECT count(*)::int FROM emc_talent.applications a
+             JOIN emc_talent.job_openings o ON o.id = a."jobOpeningId"
+             WHERE o."departmentId" = d.id AND a.status = 'HIRED') AS "hired"
         FROM emc_talent.departments d
         WHERE d."isActive" = true
         ORDER BY d.name ASC

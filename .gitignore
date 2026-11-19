@@ -17,10 +17,14 @@ build/
 # Storage / uploads
 backend/storage/uploads/
 backend/storage/temp/
-storage/
+/storage/
 data/
 pgdata/
 .pgdata/
+
+# Never ignore application source that happens to live in a "storage" folder
+!backend/src/storage/
+!backend/src/storage/**
 
 # Logs
 logs/

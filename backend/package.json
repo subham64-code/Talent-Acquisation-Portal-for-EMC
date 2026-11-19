@@ -24,7 +24,10 @@
     "@aws-sdk/client-s3": "^3.1166.0",
     "@aws-sdk/s3-request-presigner": "^3.1167.0",
     "@napi-rs/canvas": "^1.1.1",
+    "@neondatabase/serverless": "^1.0.2",
+    "@prisma/adapter-neon": "^6.16.2",
     "@prisma/client": "^6.16.2",
+    "@types/ws": "^8.18.2",
     "compression": "^1.8.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -32,7 +35,6 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
-    "googleapis": "^144.0.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.9.0",
@@ -44,6 +46,7 @@
     "pdfkit": "^0.15.2",
     "swagger-ui-express": "^5.0.1",
     "tesseract.js": "^5.1.1",
+    "ws": "^8.23.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

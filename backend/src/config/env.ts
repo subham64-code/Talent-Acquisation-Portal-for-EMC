@@ -72,20 +72,13 @@ export const env = {
   sessionTtlHours: num("SESSION_TTL_HOURS", 12),
 
   seedSuperAdminEmail: str("SEED_SUPER_ADMIN_EMAIL", "hr.admin@emc.example"),
-  seedSuperAdminName: str("SEED_SUPER_ADMIN_NAME", "EMC HR Administrator"),
+  seedSuperAdminName: str("SEED_SUPER_ADMIN_NAME", "HR Department"),
   seedItAdminEmail: str("SEED_IT_ADMIN_EMAIL", "it.admin@emc.example"),
   seedItAdminPassword: str("SEED_IT_ADMIN_PASSWORD", isProd ? "" : "it-admin-dev-password-change-me"),
 
   storageProvider: str("STORAGE_PROVIDER", "local"),
   localStorageDir: path.resolve(process.cwd(), str("LOCAL_STORAGE_DIR", "./storage/uploads")),
   maxUploadMb: num("MAX_UPLOAD_MB", 10),
-
-  googleDriveEnabled: bool("GOOGLE_DRIVE_ENABLED", false),
-  googleServiceAccountEmail: str("GOOGLE_SERVICE_ACCOUNT_EMAIL", ""),
-  googlePrivateKey: str("GOOGLE_PRIVATE_KEY", "").replace(/\\n/g, "\n"),
-  googleDriveRootFolderId: str("GOOGLE_DRIVE_ROOT_FOLDER_ID", ""),
-  googleSheetsEnabled: bool("GOOGLE_SHEETS_ENABLED", false),
-  googleSheetsSpreadsheetId: str("GOOGLE_SHEETS_SPREADSHEET_ID", ""),
 
   smtpHost: str("SMTP_HOST", ""),
   smtpPort: num("SMTP_PORT", 587),

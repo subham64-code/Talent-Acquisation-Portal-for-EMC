@@ -28,6 +28,18 @@ router.get(
 );
 
 router.get(
+  "/career/employee-update/dropdowns",
+  asyncHandler(async (_req, res) => {
+    const [departments, designations, employmentTypes] = await Promise.all([
+      prisma.department.findMany({ where: { isActive: true }, select: { id: true, name: true, code: true }, orderBy: { name: "asc" } }),
+      prisma.designation.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      prisma.employmentType.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    ]);
+    return ok(res, { departments, designations, employmentTypes });
+  }),
+);
+
+router.get(
   "/career/openings",
   asyncHandler(async (req, res) => {
     const { page, pageSize, skip, take, search } = getPagination(req);
@@ -76,7 +88,11 @@ const applySchema = z.object({
   coverLetter: z.string().optional().nullable(),
   fullName: z.string().min(2).max(120),
   email: z.string().email().transform((v) => v.trim().toLowerCase()),
-  mobile: z.string().transform((v) => v.replace(/[\s()-]/g, "")).pipe(z.string().regex(MOBILE_REGEX, "Mobile number must be exactly 10 digits and start with 6-9.")),
+  mobile: z
+    .string()
+    .min(1, "Mobile number is required.")
+    .transform((v) => v.replace(/[\s()-]/g, ""))
+    .refine((v) => MOBILE_REGEX.test(v), "Mobile number must be exactly 10 digits and start with 6-9."),
   dateOfBirth: z.string().optional().nullable(),
   gender: z.string().optional().nullable(),
   currentAddress: z.string().optional().nullable(),
@@ -232,7 +248,7 @@ router.post(
     });
     await notifyHrTeam({ type: "application.new", title: "New application", body: `${candidate.fullName} applied for ${job.title}.`, entityType: "Application", entityId: application.id });
     await cache.applicationsChanged();
-    await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: candidateId, actorEmail: candidate.email, metadata: { jobOpeningId } });
+    await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: null, actorEmail: candidate.email, metadata: { jobOpeningId, actorType: "CANDIDATE", candidateId } });
 
     return created(res, {
       application: {

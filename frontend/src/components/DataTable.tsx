@@ -14,11 +14,15 @@ interface Props<T> {
   rows: T[];
   rowKey: (row: T, index: number) => string;
   loading?: boolean;
-  empty?: string;
+  empty?: ReactNode;
   /** Extra fields shown in the mobile card view. */
   mobileTitle?: (row: T) => ReactNode;
   mobileMeta?: (row: T) => ReactNode;
   mobileActions?: (row: T) => ReactNode;
+  /** Rich content rendered below the desktop table (e.g. record counters). */
+  footer?: ReactNode;
+  /** Optional row action, useful for navigating to a record's detail view. */
+  onRowClick?: (row: T, index: number) => void;
 }
 
 /**
@@ -26,8 +30,27 @@ interface Props<T> {
  * Keeps every data column accessible on small screens without horizontal scroll.
  */
 export default function DataTable<T>({
-  columns, rows, rowKey, loading, empty = "No records found.", mobileTitle, mobileMeta, mobileActions,
+  columns, rows, rowKey, loading, empty = "No records found.", mobileTitle, mobileMeta, mobileActions, footer, onRowClick,
 }: Props<T>) {
+  const handleRowClick = (event: React.MouseEvent<HTMLTableRowElement | HTMLLIElement>, row: T, index: number) => {
+    if (!onRowClick) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button,a,input,select,textarea")) return;
+    onRowClick(row, index);
+  };
+
+  const handleMobileKeyDown = (event: React.KeyboardEvent<HTMLLIElement>, row: T, index: number) => {
+    if (!onRowClick || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    onRowClick(row, index);
+  };
+
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>, row: T, index: number) => {
+    if (!onRowClick || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    onRowClick(row, index);
+  };
+
   if (loading) {
     return (
       <div className="p-6 space-y-3">
@@ -39,14 +62,15 @@ export default function DataTable<T>({
   }
 
   if (!rows.length) {
-    return <div className="px-5 py-12 text-center text-sm ink-soft">{empty}</div>;
+    if (typeof empty === "string") return <div className="empty-state">{empty}</div>;
+    return <>{empty}</>;
   }
 
   return (
     <>
-      {/* Desktop / tablet — denser, fits small laptop widths without overflow */}
-      <div className="hidden md:block overflow-x-auto">
-        <table className="table min-w-[760px]">
+      {/* Desktop / tablet — reference data table styling */}
+      <div className="table-wrapper hidden md:block">
+        <table className="data-table min-w-[760px]">
           <thead>
             <tr>
               {columns.map((c) => (
@@ -56,7 +80,13 @@ export default function DataTable<T>({
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={rowKey(row, i)}>
+              <tr
+                key={rowKey(row, i)}
+                className={onRowClick ? "data-table__row--clickable" : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onClick={(event) => handleRowClick(event, row, i)}
+                onKeyDown={(event) => handleRowKeyDown(event, row, i)}
+              >
                 {columns.map((c) => (
                   <td key={c.key} className={c.className}>{c.render(row, i)}</td>
                 ))}
@@ -64,12 +94,19 @@ export default function DataTable<T>({
             ))}
           </tbody>
         </table>
+        {footer && <div className="table-footer">{footer}</div>}
       </div>
 
       {/* Mobile card list */}
       <ul className="md:hidden divide-y divide-[#171717]/8">
         {rows.map((row, i) => (
-          <li key={rowKey(row, i)} className="p-4">
+          <li
+            key={rowKey(row, i)}
+            className={onRowClick ? "p-4 data-table__row--clickable" : "p-4"}
+            tabIndex={onRowClick ? 0 : undefined}
+            onClick={(event) => handleRowClick(event, row, i)}
+            onKeyDown={(event) => handleMobileKeyDown(event, row, i)}
+          >
             {mobileTitle && <div className="font-semibold ink-body text-sm mb-1">{mobileTitle(row)}</div>}
             {mobileMeta && <div className="text-xs ink-soft space-y-0.5">{mobileMeta(row)}</div>}
             <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-xs ink-soft">

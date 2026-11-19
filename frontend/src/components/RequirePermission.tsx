@@ -3,16 +3,18 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { CONTROLLER_ROLES } from "../lib/sectionPermissions";
 
-export default function RequirePermission({ permission, controllerOnly, children }: { permission?: string; controllerOnly?: boolean; children: ReactNode }) {
+export default function RequirePermission({ permission, controllerOnly, children }: { permission?: string | string[]; controllerOnly?: boolean; children: ReactNode }) {
   const { user } = useAuth();
   const location = useLocation();
   const roles = Array.isArray(user?.roles) ? user.roles : [];
   const isController = roles.some((r) => CONTROLLER_ROLES.includes(r));
+  const required = permission === undefined ? [] : Array.isArray(permission) ? permission : [permission];
+  const userPermissions = Array.isArray(user?.permissions) ? user.permissions : [];
   const allowed = controllerOnly
     ? isController
     : isController ||
-      (permission === undefined) ||
-      (Array.isArray(user?.permissions) && user.permissions.includes(permission));
+      required.length === 0 ||
+      required.some((item) => userPermissions.includes(item));
 
   if (allowed) return <>{children}</>;
 

@@ -116,20 +116,23 @@ export default function AccessControl() {
   const meIsController = CONTROLLER_ROLES.some((r) => (me?.roles ?? []).includes(r));
 
   return (
-    <div className="min-h-screen surface-app p-4 sm:p-6 lg:p-8">
-      <div className="mb-6">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-[#FF9412] font-bold">HR Super Admin</p>
-        <h1 className="text-2xl font-extrabold ink-body tracking-tight">Access Control</h1>
-        <p className="text-sm ink-soft mt-1">Grant or revoke individual sections and actions for each HR user. Changes apply to their very next request.</p>
+    <div>
+      <div className="page-heading">
+        <div>
+          <h1 className="page-heading__title">Permissions</h1>
+          <p className="page-heading__subtitle">Grant or revoke individual sections and actions for each HR user. Changes apply to their very next request.</p>
+        </div>
       </div>
 
       {message && (
-        <div className="mb-4 rounded-lg bg-[#659616]/10 border border-[#659616]/25 px-4 py-2.5 text-sm text-[#659616] flex items-start justify-between gap-3">
-          <span>{message}</span><button onClick={() => setMessage("")} className="font-bold">×</button>
+        <div className="notice notice--success" role="status">
+          <div className="notice__body"><div className="notice__title">{message}</div></div>
         </div>
       )}
       {error && (
-        <div className="mb-4 rounded-lg bg-orange-50 border border-orange-200 px-4 py-3 text-sm text-orange-800">{error}</div>
+        <div className="notice notice--error" role="alert">
+          <div className="notice__body"><div className="notice__title">{error}</div></div>
+        </div>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -240,8 +243,8 @@ export default function AccessControl() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-end border-t border-[#171717]/10 pt-4 mt-4">
-                <button className="btn-ghost" onClick={resetDefaults} disabled={saving || targetIsController}>Reset to role defaults</button>
-                <button className="btn-primary" onClick={save} disabled={saving || !dirty || targetIsController}>
+                <button className="btn btn--ghost" onClick={resetDefaults} disabled={saving || targetIsController}>Reset to role defaults</button>
+                <button className="btn btn--primary" onClick={save} disabled={saving || !dirty || targetIsController}>
                   {saving ? "Saving…" : dirty ? "Save Access Changes" : "Saved ✓"}
                 </button>
               </div>

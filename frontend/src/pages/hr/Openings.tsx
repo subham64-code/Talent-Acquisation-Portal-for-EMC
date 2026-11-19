@@ -1,59 +1,135 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Edit3, ExternalLink, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
 import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
-import DataTable, { type Column } from "../../components/DataTable";
+import PageHeading from "../../components/ref/PageHeading";
+import Button from "../../components/ref/Button";
+import Modal from "../../components/ref/Modal";
+import { Input, Select, Textarea } from "../../components/ref/Input";
+import StatusPill from "../../components/ref/StatusPill";
 
-const STATUS_TONE: Record<string, string> = {
-  DRAFT: "border-[#171717]/15 bg-[#171717]/5 ink-soft",
-  PUBLISHED: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80",
-  CLOSED: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80",
+const EMPTY = {
+  jobCode: "",
+  title: "",
+  positions: "1",
+  location: "",
+  employmentTypeId: "",
+  requiredQualification: "",
+  minExperience: "",
+  maxExperience: "",
+  deadline: "",
+  description: "",
+  requiredSkills: "",
+  status: "DRAFT",
 };
 
+const toNumberOrZero = (value: string | undefined) => (value?.trim() ? Number(value) : 0);
+
 export default function Openings() {
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ status: "DRAFT", positions: "1" });
-  const [cvFile, setCvFile] = useState<File | null>(null);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const invalidate = useInvalidate();
+  const [editingId, setEditingId] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
+  const [jdFile, setJdFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [viewStatus, setViewStatus] = useState<"open" | "closed" | "archive" | "all">(() => { const value = searchParams.get("view"); return value === "closed" || value === "archive" ? value : "open"; });
   const debouncedSearch = useDebounced(search);
-  const invalidate = useInvalidate();
+
+  useEffect(() => {
+    const value = searchParams.get("view");
+    setViewStatus(value === "closed" || value === "archive" ? value : "open");
+  }, [searchParams]);
+
+  const selectView = (value: "open" | "closed" | "archive" | "all") => {
+    setViewStatus(value);
+    setSearchParams(value === "open" ? {} : value === "all" ? { view: "all" } : { view: value }, { replace: true });
+  };
 
   const params = useMemo(
-    () => ({ page: 1, pageSize: 100, search: debouncedSearch || undefined, status: statusFilter || undefined }),
-    [debouncedSearch, statusFilter],
+    () => ({ page: 1, pageSize: 100, search: debouncedSearch || undefined }),
+    [debouncedSearch],
   );
 
   const { data: items = [], isLoading } = useApiQuery<any[]>(
     queryKeys.openings(params),
     () => hrApi.openings(params).then((r: any) => r?.data?.items ?? []),
   );
-  const { data: departments = [] } = useApiQuery<any[]>(
-    ["departments", "dropdown"],
-    () => hrApi.departmentDropdown().then((r: any) => r?.data?.items ?? r?.data ?? []),
-  );
-  const { data: programs = [] } = useApiQuery<any[]>(
-    ["programs", "dropdown"],
-    () => hrApi.programs({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
-  );
   const { data: types = [] } = useApiQuery<any[]>(
     ["employment-types", "dropdown"],
     () => hrApi.employmentTypes().then((r: any) => r?.data?.items ?? r?.data ?? []),
   );
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const visibleItems = useMemo(
+    () => items.filter((opening: any) => viewStatus === "all"
+      || (viewStatus === "open" && opening.status !== "CLOSED" && opening.status !== "ARCHIVED")
+      || (viewStatus === "closed" && opening.status === "CLOSED")
+      || (viewStatus === "archive" && opening.status === "ARCHIVED")),
+    [items, viewStatus],
+  );
+  const openCount = items.filter((opening: any) => opening.status !== "CLOSED" && opening.status !== "ARCHIVED").length;
+  const closedCount = items.filter((opening: any) => opening.status === "CLOSED").length;
+  const archivedCount = items.filter((opening: any) => opening.status === "ARCHIVED").length;
+
+  const openCreate = () => {
+    setEditingId("");
+    setForm({ ...EMPTY, minExperience: "0" });
+    setJdFile(null);
+    setError("");
+    setShowForm(true);
+  };
+
+  const openEdit = (opening: any) => {
+    setEditingId(opening.id);
+    setForm({
+      jobCode: opening.jobCode ?? "",
+      title: opening.title ?? "",
+      positions: String(opening.positions ?? 1),
+      location: opening.location ?? "",
+      employmentTypeId: opening.employmentTypeId ?? "",
+      requiredQualification: opening.requiredQualification ?? "",
+      minExperience: String(opening.minExperience ?? 0),
+      maxExperience: opening.maxExperience != null ? String(opening.maxExperience) : "",
+      deadline: opening.deadline ? String(opening.deadline).slice(0, 10) : "",
+      description: opening.description ?? "",
+      requiredSkills: Array.isArray(opening.requiredSkills) ? opening.requiredSkills.join(", ") : opening.requiredSkills ?? "",
+      status: opening.status ?? "DRAFT",
+    });
+    setJdFile(null);
+    setError("");
+    setShowForm(true);
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
     setSaving(true);
     setError("");
+
+    const minExperience = toNumberOrZero(form.minExperience);
+    const maxExperience = form.maxExperience.trim() ? Number(form.maxExperience) : undefined;
+    if (!Number.isFinite(minExperience) || minExperience < 0) {
+      setError("Minimum experience must be zero or greater.");
+      setSaving(false);
+      return;
+    }
+    const payload = { ...form, minExperience, maxExperience };
+
     try {
-      await hrApi.createOpening(form, cvFile || undefined);
-      setShowCreate(false);
-      setForm({ status: "DRAFT", positions: "1" });
-      setCvFile(null);
-      setMessage("Opening created.");
+      if (editingId) {
+        await hrApi.updateOpening(editingId, payload, jdFile || undefined);
+        setMessage("Opening updated.");
+      } else {
+        await hrApi.createOpening(payload, jdFile || undefined);
+        setMessage("Opening saved as a draft.");
+      }
+      setShowForm(false);
+      setEditingId("");
       invalidate(["openings", "dashboard"]);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Save failed.");
@@ -62,183 +138,283 @@ export default function Openings() {
     }
   };
 
-  const changeStatus = async (id: string, status: string) => {
+  const changeStatus = async (opening: any, status: string) => {
+    setError("");
     try {
-      if (status === "PUBLISHED") await hrApi.publishOpening(id);
-      else if (status === "CLOSED") await hrApi.closeOpening(id);
-      else await hrApi.reopenOpening(id);
+      if (status === "PUBLISHED") await hrApi.publishOpening(opening.id);
+      else if (status === "CLOSED") {
+        await hrApi.closeOpening(opening.id);
+      }
+      else if (status === "ARCHIVED") {
+        await hrApi.archiveOpening(opening.id);
+        setSearchParams({ view: "archive" }, { replace: true });
+      }
+      else await hrApi.reopenOpening(opening.id);
+      setMessage(`${opening.title} moved to ${status === "CLOSED" ? "archive" : status.toLowerCase()}.`);
       invalidate(["openings", "dashboard"]);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Action failed.");
     }
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("Delete this opening? Only possible when it has no applications.")) return;
-    try { await hrApi.deleteOpening(id); invalidate(["openings", "dashboard"]); } catch (err: any) { setError(err.response?.data?.error?.message || "Delete failed."); }
+  const remove = async (opening: any) => {
+    if (!window.confirm(`Delete ${opening.title}? It will be moved to the Archive section instead of permanently being removed.`)) return;
+    setError("");
+    try {
+      await hrApi.archiveOpening(opening.id);
+      setMessage(`${opening.title} was archived.`);
+      setSearchParams({ view: "archive" }, { replace: true });
+      invalidate(["openings", "dashboard"]);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Archive failed.");
+    }
   };
 
-  const columns: Column<any>[] = useMemo(() => [
-    { key: "idx", header: "#", render: (_r, i) => <span className="ink-soft">{i + 1}</span> },
-    { key: "code", header: "Job ID", hideOnMobile: true, render: (o) => <span className="font-mono text-xs ink-soft">{o.jobCode}</span> },
-    { key: "title", header: "Title", render: (o) => <span className="font-medium ink-body">{o.title}</span> },
-    { key: "dept", header: "Department", hideOnMobile: true, render: (o) => <span className="ink-soft">{o.department?.name || "—"}</span> },
-    { key: "program", header: "Program", hideOnMobile: true, render: (o) => <span className="ink-soft text-xs">{o.program?.name || "—"}</span> },
-    { key: "pos", header: "Positions", hideOnMobile: true, render: (o) => <span className="ink-soft">{o.positions}</span> },
-    { key: "apps", header: "Applications", hideOnMobile: true, render: (o) => <span className="ink-soft">{o._count?.applications ?? 0}</span> },
-    { key: "deadline", header: "Deadline", hideOnMobile: true, render: (o) => <span className="ink-soft text-xs">{o.deadline ? new Date(o.deadline).toLocaleDateString() : "—"}</span> },
-    { key: "status", header: "Status", render: (o) => <span className={`badge whitespace-nowrap ${STATUS_TONE[o.status]}`}>{o.status}</span> },
-    {
-      key: "actions", header: "Actions",
-      render: (o) => (
-        <div className="flex gap-1">
-          <button className="btn-xs btn-outline whitespace-nowrap" onClick={() => changeStatus(o.id, o.status === "PUBLISHED" ? "CLOSED" : "PUBLISHED")}>
-            {o.status === "PUBLISHED" ? "Close" : "Publish"}
-          </button>
-          <a href={`/hr/submissions?jobOpeningId=${o.id}`} className="btn-xs btn-ghost whitespace-nowrap">Applications</a>
-          <button className="btn-xs btn-danger whitespace-nowrap" onClick={() => remove(o.id)}>Delete</button>
-        </div>
-      ),
-    },
-  ], []);
-
   return (
-    <div className="min-h-screen surface-app p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-        <div>
-          <h1 className="text-2xl font-extrabold ink-body tracking-tight">Manage Openings</h1>
-          <p className="text-sm ink-soft mt-0.5">Create, publish and close EMC vacancies.</p>
-        </div>
-        <button className="btn-primary" onClick={() => setShowCreate(!showCreate)}>{showCreate ? "Cancel" : "+ Create Opening"}</button>
-      </div>
+    <div>
+      <PageHeading
+        title="Manage openings"
+        description="Create, review, publish and archive job openings through the approved hiring SOP."
+        action={
+          <Button icon={Plus} onClick={openCreate}>
+            Create opening
+          </Button>
+        }
+      />
 
       {(error || message) && (
-        <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${error ? "bg-orange-50 border-orange-200 text-orange-800" : "bg-[#659616]/10 border-[#659616]/25 text-[#659616]"}`}>
-          {error || message}
+        <div className={`notice ${error ? "notice--error" : "notice--success"}`} role="status">
+          <div className="notice__body">
+            <div className="notice__title">{error || message}</div>
+          </div>
         </div>
       )}
 
-      {showCreate && (
-        <div className="card p-5 mb-5">
-          <h3 className="font-bold ink-body mb-4">Create Opening</h3>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Job code</label>
-                <input className="input" value={form.jobCode || ""} onChange={(e) => setForm((p) => ({ ...p, jobCode: e.target.value }))} placeholder="Auto-generated" />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Job title *</label>
-                <input className="input" required value={form.title || ""} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Department</label>
-                <select className="input" required value={form.departmentId || ""} onChange={(e) => setForm((p) => ({ ...p, departmentId: e.target.value }))}>
-                  <option value="">Select…</option>
-                  {departments.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Program / Project</label>
-                <select className="input" value={form.programId || ""} onChange={(e) => setForm((p) => ({ ...p, programId: e.target.value }))}>
-                  <option value="">None</option>
-                  {programs.map((pr: any) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Positions</label>
-                <input className="input" type="number" min={1} value={form.positions || "1"} onChange={(e) => setForm((p) => ({ ...p, positions: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Location</label>
-                <input className="input" value={form.location || ""} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Employment type</label>
-                <select className="input" value={form.employmentTypeId || ""} onChange={(e) => setForm((p) => ({ ...p, employmentTypeId: e.target.value }))}>
-                  <option value="">Select…</option>
-                  {types.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Required qualification</label>
-                <input className="input" value={form.requiredQualification || ""} onChange={(e) => setForm((p) => ({ ...p, requiredQualification: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Min experience</label>
-                <input className="input" type="number" step="0.5" value={form.minExperience || ""} onChange={(e) => setForm((p) => ({ ...p, minExperience: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Max experience</label>
-                <input className="input" type="number" step="0.5" value={form.maxExperience || ""} onChange={(e) => setForm((p) => ({ ...p, maxExperience: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Deadline</label>
-                <input className="input" type="date" value={form.deadline || ""} onChange={(e) => setForm((p) => ({ ...p, deadline: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Status</label>
-                <select className="input" value={form.status || "DRAFT"} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
-                  <option value="DRAFT">Draft</option>
-                  <option value="PUBLISHED">Published</option>
-                  <option value="CLOSED">Closed</option>
-                </select>
-              </div>
+      <section className="card">
+        <div className="table-toolbar">
+          <div>
+            <h2 className="card__title">Opening register</h2>
+            <p className="card__subtitle">Active openings stay here. Closing an opening archives it rather than deleting the record.</p>
+          </div>
+          <div className="table-toolbar__controls table-toolbar__controls--stack">
+            <input
+              className="input"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search openings"
+              aria-label="Search openings"
+            />
+            <div className="filters" aria-label="Opening status view">
+              <button type="button" className={`ta-filter-chip ${viewStatus === "open" ? "active" : ""}`} onClick={() => selectView("open")}>Open <span className="ta-filter-chip__count">{openCount}</span></button>
+              <button type="button" className={`ta-filter-chip ${viewStatus === "closed" ? "active" : ""}`} onClick={() => selectView("closed")}>Close <span className="ta-filter-chip__count">{closedCount}</span></button>
+              <button type="button" className={`ta-filter-chip ${viewStatus === "archive" ? "active" : ""}`} onClick={() => selectView("archive")}>Archive <span className="ta-filter-chip__count">{archivedCount}</span></button>
+              <button type="button" className={`ta-filter-chip ${viewStatus === "all" ? "active" : ""}`} onClick={() => selectView("all")}>All <span className="ta-filter-chip__count">{items.length}</span></button>
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold ink-soft">Job description *</label>
-              <textarea className="input" rows={3} required value={form.description || ""} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold ink-soft">Required skills (comma separated)</label>
-              <input className="input" value={form.requiredSkills || ""} placeholder="React, Node.js, PostgreSQL" onChange={(e) => setForm((p) => ({ ...p, requiredSkills: e.target.value }))} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-semibold ink-soft">JD file (PDF / DOCX / TXT)</label>
-              <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={(e) => setCvFile(e.target.files?.[0] ?? null)} className="block w-full text-sm ink-soft file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#659616]/10 file:text-[#659616]" />
-            </div>
-            <button className="btn-primary" disabled={saving}>{saving ? "Saving…" : "Save Opening"}</button>
-          </form>
+          </div>
         </div>
-      )}
 
-      <div className="card p-4 mb-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <input className="input" placeholder="Search title or job code…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select className="select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          <option value="DRAFT">Draft</option>
-          <option value="PUBLISHED">Published</option>
-          <option value="CLOSED">Closed</option>
-        </select>
-        <button className="btn-ghost justify-start" onClick={() => { setSearch(""); setStatusFilter(""); }}>Clear filters</button>
-      </div>
+        <div className="table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Opening</th>
+                <th>Location</th>
+                <th>Applicants</th>
+                <th>Minimum Experience</th>
+                <th>Deadline</th>
+                <th>Status</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleItems.map((opening: any) => (
+                <tr key={opening.id}>
+                  <td>
+                    <strong>{opening.title}</strong>
+                    <span className="table-muted">{opening.jobCode}</span>
+                  </td>
+                  <td>{opening.location ?? "—"}</td>
+                  <td>{opening._count?.applications ?? 0}</td>
+                  <td>{Number(opening.minExperience ?? 0)} years</td>
+                  <td>{opening.deadline ? new Date(opening.deadline).toLocaleDateString() : "—"}</td>
+                  <td>
+                    <StatusPill status={opening.status} />
+                  </td>
+                  <td>
+                    <div className="opening-actions-box" aria-label={`Actions for ${opening.title}`}>
+                      <button
+                        type="button"
+                        className="opening-action opening-action--secondary"
+                        onClick={() => openEdit(opening)}
+                        aria-label={`Edit ${opening.title}`}
+                      >
+                        <Edit3 size={15} />
+                      </button>
+                      {opening.status === "DRAFT" && (
+                        <button type="button" className="opening-action opening-action--success" onClick={() => changeStatus(opening, "PUBLISHED")}>
+                          Publish
+                        </button>
+                      )}
+                      {opening.status === "PUBLISHED" && (
+                        <button type="button" className="opening-action opening-action--danger" onClick={() => changeStatus(opening, "CLOSED")}>
+                          <X size={15} aria-hidden="true" /> Close
+                        </button>
+                      )}
+                      {(opening.status === "CLOSED" || opening.status === "ARCHIVED") && (
+                        <button type="button" className="opening-action opening-action--success" onClick={() => changeStatus(opening, "PUBLISHED")}>
+                          <RotateCcw size={15} aria-hidden="true" /> Reopen
+                        </button>
+                      )}
+                      <button type="button" className="opening-action opening-action--success-solid" onClick={() => navigate(`/hr/submissions?jobOpeningId=${opening.id}`)}>
+                        <ExternalLink size={15} aria-hidden="true" /> Applications
+                      </button>
+                      {opening.status !== "ARCHIVED" && (
+                        <button type="button" className="opening-action opening-action--danger-icon" onClick={() => remove(opening)} aria-label={`Delete ${opening.title}`} title="Move to archive">
+                          <Trash2 size={15} aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!isLoading && visibleItems.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">No openings match this view.</div>
+                  </td>
+                </tr>
+              )}
+              {isLoading && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">Loading openings…</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div className="card overflow-hidden">
-        <DataTable
-          columns={columns}
-          rows={items}
-          rowKey={(r) => r.id}
-          loading={isLoading}
-          empty="No openings match your filters."
-          mobileTitle={(o) => o.title}
-          mobileMeta={(o) => (
-            <>
-              <div>{o.jobCode} · {o.department?.name || "—"}</div>
-              <div>{o.positions} position(s) · {o._count?.applications ?? 0} applications</div>
-            </>
-          )}
-          mobileActions={(o) => (
-            <>
-              <button className="btn-xs btn-outline" onClick={() => changeStatus(o.id, o.status === "PUBLISHED" ? "CLOSED" : "PUBLISHED")}>
-                {o.status === "PUBLISHED" ? "Close" : "Publish"}
-              </button>
-              <a href={`/hr/submissions?jobOpeningId=${o.id}`} className="btn-xs btn-ghost">Applications</a>
-              <button className="btn-xs btn-danger" onClick={() => remove(o.id)}>Delete</button>
-            </>
-          )}
-        />
-      </div>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editingId ? "Edit opening" : "Create opening"}
+        subtitle="Capture the approved role details, then publish when ready."
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+            <Button icon={Save} type="submit" form="opening-form" loading={saving}>
+              {editingId ? "Save changes" : "Save draft"}
+            </Button>
+          </>
+        }
+      >
+        <form id="opening-form" onSubmit={submit} className="form-grid">
+          <Input
+            label="Job title"
+            required
+            value={form.title}
+            onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+            placeholder="e.g. Senior GIS Analyst"
+          />
+          <Input
+            label="Job code"
+            value={form.jobCode}
+            onChange={(event) => setForm((current) => ({ ...current, jobCode: event.target.value }))}
+            placeholder="Auto-generated when empty"
+          />
+          <Input
+            label="Positions"
+            type="number"
+            min={1}
+            value={form.positions}
+            onChange={(event) => setForm((current) => ({ ...current, positions: event.target.value }))}
+          />
+          <Input
+            label="Location"
+            value={form.location}
+            onChange={(event) => setForm((current) => ({ ...current, location: event.target.value }))}
+            placeholder="City or Remote"
+          />
+          <Select
+            label="Employment type"
+            value={form.employmentTypeId}
+            onChange={(event) => setForm((current) => ({ ...current, employmentTypeId: event.target.value }))}
+            options={types.map((type: any) => ({ value: type.id, label: type.name }))}
+            placeholder="Select type"
+          />
+          <Input
+            label="Required qualification"
+            value={form.requiredQualification}
+            onChange={(event) => setForm((current) => ({ ...current, requiredQualification: event.target.value }))}
+          />
+          <Input
+            label="Minimum experience"
+            type="number"
+            min={0}
+            step="0.5"
+            value={form.minExperience}
+            onChange={(event) => setForm((current) => ({ ...current, minExperience: event.target.value }))}
+            placeholder="0"
+          />
+          <Input
+            label="Maximum experience"
+            type="number"
+            min={0}
+            step="0.5"
+            value={form.maxExperience}
+            onChange={(event) => setForm((current) => ({ ...current, maxExperience: event.target.value }))}
+          />
+          <Input
+            label="Application deadline"
+            type="date"
+            value={form.deadline}
+            onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value }))}
+          />
+          <Select
+            label="Status"
+            value={form.status}
+            onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+            options={[
+              { value: "DRAFT", label: "Draft" },
+              { value: "PUBLISHED", label: "Published" },
+              { value: "CLOSED", label: "Archived" },
+            ]}
+            placeholder="Select status"
+          />
+          <Textarea
+            className="field--full"
+            label="Role summary"
+            required
+            rows={3}
+            value={form.description}
+            onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+            placeholder="Responsibilities, must-have skills, and approval notes."
+          />
+          <Input
+            className="field--full"
+            label="Required skills"
+            value={form.requiredSkills}
+            onChange={(event) => setForm((current) => ({ ...current, requiredSkills: event.target.value }))}
+            placeholder="Comma separated, e.g. React, Node.js, PostgreSQL"
+          />
+          <div className="field field--full">
+            <label className="field__label" htmlFor="opening-jd">Job description file</label>
+            <input
+              id="opening-jd"
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              className="input"
+              onChange={(event) => setJdFile(event.target.files?.[0] ?? null)}
+            />
+            <span className="field__hint">PDF, DOC, DOCX or TXT.</span>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

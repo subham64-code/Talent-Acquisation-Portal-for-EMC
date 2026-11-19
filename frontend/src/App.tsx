@@ -90,6 +90,7 @@ export default function App() {
                 <Route path="/" element={<PublicHome />} />
                 <Route path="/auth/hr/login" element={<HRLogin />} />
                 <Route path="/employee/update" element={<EmployeeUpdate />} />
+                <Route path="/employee-update" element={<EmployeeUpdate />} />
                 <Route path="/offer/respond" element={<OfferRespond />} />
                 <Route path="/onboard/documents" element={<OnboardDocuments />} />
                 <Route path="/career" element={<Home />} />

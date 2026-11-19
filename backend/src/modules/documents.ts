@@ -70,8 +70,8 @@ router.post(
       data: { fileId: file.id, status: DOCUMENT_STATUS.UPLOADED, uploadedAt: new Date() },
       include: { category: true },
     });
-    await prisma.documentVerificationHistory.create({ data: { documentId: document.id, fromStatus: document.status, toStatus: DOCUMENT_STATUS.UPLOADED, changedById: decoded.candidateId, remarks: "Candidate uploaded document" } });
-    await logAudit(req, { action: "DOCUMENT_UPLOAD", entityType: "CandidateDocument", entityId: document.id, actorId: decoded.candidateId, actorEmail: (await prisma.candidate.findUnique({ where: { id: decoded.candidateId } }))?.email, metadata: { category: updated.category.name } });
+    await prisma.documentVerificationHistory.create({ data: { documentId: document.id, fromStatus: document.status, toStatus: DOCUMENT_STATUS.UPLOADED, changedById: null, remarks: "Candidate uploaded document" } });
+    await logAudit(req, { action: "DOCUMENT_UPLOAD", entityType: "CandidateDocument", entityId: document.id, actorId: null, actorEmail: (await prisma.candidate.findUnique({ where: { id: decoded.candidateId } }))?.email, metadata: { category: updated.category.name, actorType: "CANDIDATE", candidateId: decoded.candidateId, applicationId: decoded.applicationId } });
     await notifyHrTeam({ type: "document.uploaded", title: "Document uploaded", body: `A document (${updated.category.name}) was uploaded for application ${decoded.applicationId}.`, entityType: "CandidateDocument", entityId: document.id });
     return ok(res, { message: "Document uploaded.", document: updated });
   }),

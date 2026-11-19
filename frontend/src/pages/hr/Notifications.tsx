@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { hrApi } from "../../lib/api";
+import PageHeader from "../../components/ref/PageHeader";
 
 export default function Notifications() {
   const [items, setItems] = useState<any[]>([]);
@@ -34,17 +35,17 @@ export default function Notifications() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <span className="page-eyebrow">Inbox</span>
-          <h1 className="text-2xl sm:text-[1.7rem] font-extrabold tracking-tight text-[var(--ink)]">Notifications</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`badge ${count > 0 ? "badge-orange" : "badge-ink"}`}>{count} unread</span>
-          <button className="btn-sm btn-outline" onClick={markAll} disabled={count === 0}>Mark all read</button>
-        </div>
-      </div>
+    <div className="page">
+      <PageHeader
+        eyebrow="Ecometrix · Inbox"
+        title="Notifications"
+        actions={
+          <div className="flex items-center gap-2">
+            <span className={`badge ${count > 0 ? "badge--orange" : "badge--grey"}`}>{count} unread</span>
+            <button className="btn btn--outline btn--sm" onClick={markAll} disabled={count === 0}>Mark all read</button>
+          </div>
+        }
+      />
       {loading ? (
         <div className="h-64 flex items-center justify-center ink-soft">Loading…</div>
       ) : (

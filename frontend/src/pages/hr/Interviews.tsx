@@ -1,276 +1,1278 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  CalendarClock,
+  CalendarPlus,
+  CheckCircle2,
+  ClipboardList,
+  Mail,
+  Pencil,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Star,
+  XCircle,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { hrApi } from "../../lib/api";
+import PageHeader from "../../components/ref/PageHeader";
+import Button from "../../components/ref/Button";
+import { Input, Select, Textarea } from "../../components/ref/Input";
+import Modal from "../../components/ref/Modal";
+import DataTable, { type Column } from "../../components/DataTable";
 
-const RESULT_OPTIONS = [
-  { key: "SELECTED", label: "Selected", tone: "border-[#659616]/30 bg-[#659616]/10 text-[#659616]/80", icon: "✓" },
-  { key: "NEXT_ROUND", label: "Next Round", tone: "border-[#8BC34A]/40 bg-[#8BC34A]/10 text-[#5E8C31]", icon: "→" },
-  { key: "UNDER_REVIEW", label: "Under Review", tone: "border-[#FF9412]/30 bg-[#FF9412]/10 text-[#FF9412]/80", icon: "⟳" },
-  { key: "REJECTED", label: "Rejected", tone: "border-red-200 bg-red-50 text-red-700", icon: "✕" },
-  { key: "ON_HOLD", label: "On Hold", tone: "border-[#171717]/15 bg-[#171717]/5 ink-soft", icon: "⏸" },
+const ROUND_OPTIONS = [
+  "Screening Round",
+  "HR Round",
+  "Technical Round 1",
+  "Technical Round 2",
+  "Managerial Round",
+  "Director Round",
+  "Final Round",
 ];
 
+const MODE_OPTIONS = [
+  { value: "ONLINE", label: "Online" },
+  { value: "OFFLINE", label: "Offline" },
+];
+
+const OUTCOME_OPTIONS = [
+  { value: "SELECTED", label: "Select for offer" },
+  { value: "NEXT_ROUND", label: "Move to next round" },
+  { value: "UNDER_REVIEW", label: "Keep under review" },
+  { value: "REJECTED", label: "Reject candidate" },
+  { value: "ON_HOLD", label: "Put on hold" },
+];
+
+const FILTERS = [
+  { key: "scheduled", label: "Scheduled" },
+  { key: "completed", label: "Completed" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "all", label: "All" },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]["key"];
+type ScheduleMode = "create" | "edit" | "reschedule";
+type InterviewerEntry = { name: string; email: string };
+
+const interviewerEntryKey = (entry: InterviewerEntry) =>
+  `${String(entry.name || "").trim().toLowerCase()}::${String(entry.email || "").trim().toLowerCase()}`;
+
+const interviewerEntriesFrom = (row: any): InterviewerEntry[] => {
+  const metadata = row?.interviewerMetadata;
+  if (Array.isArray(metadata?.interviewers)) {
+    return metadata.interviewers
+      .map((entry: any) => ({ name: String(entry?.name ?? "").trim(), email: String(entry?.email ?? "").trim() }))
+      .filter((entry: InterviewerEntry) => entry.name);
+  }
+  const names = String(row?.interviewerName ?? "").split(",").map((name: string) => name.trim()).filter(Boolean);
+  return names.map((name: string, index: number) => ({ name, email: index === 0 ? row?.interviewerEmail ?? "" : "" }));
+};
+
+const emptySchedule = () => ({
+  applicationId: "",
+  round: "Technical Round 1",
+  interviewers: [{ name: "", email: "" }],
+  date: "",
+  time: "",
+  mode: "ONLINE",
+  meetingLink: "",
+  location: "",
+  instructions: "",
+});
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+
+const formatTime = (iso: string) =>
+  new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+const formatDateTime = (iso: string) => `${formatDate(iso)} · ${formatTime(iso)}`;
+
+const relativeDay = (iso: string) => {
+  const target = new Date(iso);
+  const today = new Date();
+  const a = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const diff = Math.round((a - b) / 86_400_000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  if (diff > 1) return `In ${diff} days`;
+  return `${Math.abs(diff)} days ago`;
+};
+
+const initials = (name: string) =>
+  (name || "?")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
 export default function Interviews() {
+  const navigate = useNavigate();
+
   const [items, setItems] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<Record<string, string>>({ round: "Technical Round 1", mode: "ONLINE", timezone: "Asia/Kolkata" });
-  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<FilterKey>("scheduled");
+  const [search, setSearch] = useState("");
+
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [resultFor, setResultFor] = useState<any>(null);
-  const [showNextRound, setShowNextRound] = useState(false);
-  const [nextRoundName, setNextRoundName] = useState("");
-  const [nextDate, setNextDate] = useState("");
+
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("create");
+  const [scheduleEntry, setScheduleEntry] = useState<any>(null);
+  const [scheduleForm, setScheduleForm] = useState(emptySchedule());
+  const [scheduleErrors, setScheduleErrors] = useState<Record<string, string>>({});
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
+  const [feedbackEntry, setFeedbackEntry] = useState<any>(null);
+  const [feedbackForm, setFeedbackForm] = useState({
+    interviewerName: "",
+    rating: "",
+    remarks: "",
+    outcome: "",
+    nextRound: "",
+    nextDate: "",
+  });
+  const [feedbackInterviewers, setFeedbackInterviewers] = useState<Array<{ name: string; email: string }>>([{ name: "", email: "" }]);
+  const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
+  const [savingFeedback, setSavingFeedback] = useState(false);
+
+  const [inviteEntry, setInviteEntry] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [cancelEntry, setCancelEntry] = useState<any>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const [selectedForOffer, setSelectedForOffer] = useState<any>(null);
-  const navigate = useNavigate();
 
-  const load = () => {
-    hrApi.interviews({ page: 1, pageSize: 100 }).then((r: any) => setItems(r.data.items ?? r.data)).catch(() => setItems([]));
-  };
-
-  useEffect(() => {
-    Promise.all([
-      hrApi.interviews({ page: 1, pageSize: 100 }).then((r: any) => setItems(r.data.items ?? r.data)).catch(() => setItems([])),
-      hrApi.applications({ page: 1, pageSize: 100, status: "SHORTLISTED" }).then((r: any) => setApplications(r.data.items ?? r.data)).catch(() => setApplications([])),
-    ]).finally(() => setLoading(false));
+  const load = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    try {
+      const [interviews, applicationList] = await Promise.all([
+        hrApi.interviews({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+        hrApi
+          .applications({ page: 1, pageSize: 200 })
+          .then((r: any) => r?.data?.items ?? r?.data ?? []),
+      ]);
+      setItems(Array.isArray(interviews) ? interviews : []);
+      setApplications(Array.isArray(applicationList) ? applicationList : []);
+      setError("");
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not load interview records. Please try again.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const scheduled = useMemo(
+    () => items.filter((i) => i.status === "SCHEDULED" || i.status === "RESCHEDULED"),
+    [items],
+  );
+  const completed = useMemo(() => items.filter((i) => i.status === "COMPLETED"), [items]);
+  const cancelled = useMemo(() => items.filter((i) => i.status === "CANCELLED"), [items]);
+  const interviewerOptions = useMemo(() => {
+    const map = new Map<string, InterviewerEntry>();
+    for (const row of items) {
+      for (const entry of interviewerEntriesFrom(row)) {
+        const key = interviewerEntryKey(entry);
+        if (!map.has(key)) map.set(key, entry);
+      }
+    }
+    return Array.from(map.values()).sort((left, right) => left.name.localeCompare(right.name) || left.email.localeCompare(right.email));
+  }, [items]);
+
+  const counts = {
+    scheduled: scheduled.length,
+    completed: completed.length,
+    cancelled: cancelled.length,
+    all: items.length,
+  };
+
+  const filterFor = (key: FilterKey) => {
+    if (key === "scheduled") return scheduled;
+    if (key === "completed") return completed;
+    if (key === "cancelled") return cancelled;
+    return items;
+  };
+
+  const visibleEntries = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return [...filterFor(statusFilter)]
+      .filter((row) => {
+        if (!needle) return true;
+        const haystack = [
+          row.application?.candidate?.fullName,
+          row.application?.jobOpening?.title,
+          interviewerSummary(row).names,
+          interviewerSummary(row).label,
+          row.round,
+          row.mode,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      })
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, statusFilter, search]);
+
+  const calendarDays = useMemo(() => {
+    const groups = new Map<string, any[]>();
+    const upcoming = [...scheduled].sort(
+      (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+    );
+    upcoming.forEach((entry) => {
+      const day = formatDate(entry.scheduledAt);
+      const list = groups.get(day) || [];
+      list.push(entry);
+      groups.set(day, list);
+    });
+    return Array.from(groups.entries());
+  }, [scheduled]);
+
+  const latestFeedback = (row: any) => {
+    const feedback = row.feedback;
+    if (Array.isArray(feedback)) return feedback[feedback.length - 1] || null;
+    return feedback || null;
+  };
+
+  const interviewerSummary = (row: any) => {
+    const metadata = row?.interviewerMetadata;
+    const list = Array.isArray(metadata?.interviewers) ? metadata.interviewers : null;
+    const names = list?.map((entry: any) => entry.name).filter(Boolean).join(", ") || row.interviewerName || "";
+    const type = row.interviewerType || metadata?.interviewerType || (names ? "INDIVIDUAL" : "");
+    const label = type === "PANEL" ? "Panel Interview" : type === "MULTIPLE" ? "Multiple Interview" : type === "INDIVIDUAL" ? "Individual Interview" : "Interview";
+    return { names, type, label };
+  };
+
+  const openCreate = () => {
+    setScheduleMode("create");
+    setScheduleEntry(null);
+    setScheduleForm(emptySchedule());
+    setScheduleErrors({});
+    setError("");
+    setScheduleOpen(true);
+  };
+
+  const openEntrySchedule = (entry: any, mode: ScheduleMode) => {
+    const date = new Date(entry.scheduledAt);
+    const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    setScheduleMode(mode);
+    setScheduleEntry(entry);
+    const metadata = (entry as any).interviewerMetadata;
+    const interviewers = Array.isArray(metadata?.interviewers) && metadata.interviewers.length
+      ? metadata.interviewers.map((item: any) => ({ name: item.name || "", email: item.email || "" }))
+      : [{ name: entry.interviewerName || "", email: entry.interviewerEmail || "" }];
+    setScheduleForm({
+      applicationId: entry.applicationId || entry.application?.id || "",
+      round: entry.round || "Technical Round 1",
+      interviewers,
+      date: localDate,
+      time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+      mode: entry.mode || "ONLINE",
+      meetingLink: entry.meetingLink || "",
+      location: entry.location || "",
+      instructions: entry.instructions || "",
+    });
+    setScheduleErrors({});
+    setError("");
+    setScheduleOpen(true);
+  };
+
+  const closeSchedule = () => {
+    if (savingSchedule) return;
+    setScheduleOpen(false);
+    setScheduleEntry(null);
+  };
+
+  const updateSchedule = (key: string, value: string) => {
+    setScheduleForm((current) => ({ ...current, [key]: value }));
+    setScheduleErrors((current) => ({ ...current, [key]: "" }));
+  };
+
+  const updateInterviewer = (index: number, key: "name" | "email", value: string) => {
+    setScheduleForm((current) => ({
+      ...current,
+      interviewers: current.interviewers.map((entry: any, entryIndex: number) =>
+        entryIndex === index ? { ...entry, [key]: value } : entry,
+      ),
+    }));
+    setScheduleErrors((current) => ({ ...current, interviewers: "" }));
+  };
+
+  const selectScheduleInterviewer = (index: number, value: string) => {
+    const selected = interviewerOptions.find((entry) => interviewerEntryKey(entry) === value);
+    setScheduleForm((current) => ({
+      ...current,
+      interviewers: current.interviewers.map((entry: any, entryIndex: number) => entryIndex === index ? { name: selected?.name ?? "", email: selected?.email ?? "" } : entry),
+    }));
+    setScheduleErrors((current) => ({ ...current, interviewers: "" }));
+  };
+
+  const addInterviewer = () => {
+    setScheduleForm((current) => ({ ...current, interviewers: [...current.interviewers, { name: "", email: "" }] }));
+  };
+
+  const removeInterviewer = (index: number) => {
+    setScheduleForm((current) => ({
+      ...current,
+      interviewers: current.interviewers.length === 1 ? current.interviewers : current.interviewers.filter((_: any, entryIndex: number) => entryIndex !== index),
+    }));
+  };
+
+  const submitSchedule = async () => {
+    const errors: Record<string, string> = {};
+    if (!scheduleForm.applicationId) errors.applicationId = "Choose a shortlisted candidate.";
+    if (!scheduleForm.round.trim()) errors.round = "Choose the interview round.";
+    const cleanInterviewers = (scheduleForm.interviewers || []).map((entry: any) => ({ name: String(entry.name || "").trim(), email: String(entry.email || "").trim() })).filter((entry: any) => entry.name || entry.email);
+    if (cleanInterviewers.length === 0) {
+      errors.interviewers = "Add at least one interviewer.";
+    } else if (cleanInterviewers.some((entry: any) => !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(entry.email))) {
+      errors.interviewers = "Each interviewer needs a name and a valid email address.";
+    }
+    if (!scheduleForm.date) errors.date = "Choose the interview date.";
+    if (!scheduleForm.time) errors.time = "Choose the interview time.";
+    if (scheduleForm.mode === "ONLINE" && !/^https?:\/\/\S+$/i.test(scheduleForm.meetingLink.trim())) {
+      errors.meetingLink = "Enter a valid meeting URL (https://…).";
+    }
+    if (scheduleForm.mode !== "ONLINE" && !scheduleForm.location.trim()) {
+      errors.location = "Enter the interview venue.";
+    }
+    setScheduleErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    const scheduledAt = new Date(`${scheduleForm.date}T${scheduleForm.time}`).toISOString();
+    const payload: Record<string, unknown> = {
+      scheduledAt,
+      timezone: "Asia/Kolkata",
+      mode: scheduleForm.mode,
+      meetingLink: scheduleForm.mode === "ONLINE" ? scheduleForm.meetingLink.trim() : null,
+      location: scheduleForm.mode === "ONLINE" ? null : scheduleForm.location.trim(),
+      interviewers: cleanInterviewers,
+      instructions: scheduleForm.instructions.trim() || null,
+    };
+
+    setSavingSchedule(true);
     setError("");
     try {
-      await hrApi.createInterview(form);
-      setShowCreate(false);
-      setForm({ round: "Technical Round 1", mode: "ONLINE", timezone: "Asia/Kolkata" });
-      load();
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Failed to schedule interview.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const cancel = async (id: string) => {
-    if (!confirm("Cancel this interview?")) return;
-    try { await hrApi.cancelInterview(id, {}); load(); } catch (err: any) { setError(err.response?.data?.error?.message || "Cancel failed."); }
-  };
-
-  const applyResult = async (key: string) => {
-    if (!resultFor) return;
-    try {
-      await hrApi.interviewResult(resultFor.id, {
-        result: key,
-        remarks: resultFor.remarks || undefined,
-        nextRound: key === "NEXT_ROUND" ? (nextRoundName.trim() || "Next Round") : undefined,
-        nextScheduledAt: key === "NEXT_ROUND" && nextDate ? new Date(nextDate).toISOString() : undefined,
-      });
-      if (key === "SELECTED") {
-        setSelectedForOffer(resultFor);
+      if (scheduleMode === "create") {
+        const response = await hrApi.createInterview({ ...payload, applicationId: scheduleForm.applicationId, round: scheduleForm.round });
+        const failed = response?.data?.interviewerEmails?.failed ?? [];
+        setMessage("Interview scheduled successfully.");
+        if (failed.length) setError(`Interview saved, but the email could not be delivered to: ${failed.join(", ")}.`);
+        setStatusFilter("scheduled");
+      } else {
+        const response = await hrApi.updateInterview(scheduleEntry.id, {
+          ...payload,
+          ...(scheduleMode === "reschedule" ? { status: "RESCHEDULED" } : {}),
+        });
+        const failed = response?.data?.interviewerEmails?.failed ?? [];
+        setMessage(scheduleMode === "reschedule" ? "Interview rescheduled successfully." : "Interview updated successfully.");
+        if (failed.length) setError(`Interview saved, but the email could not be delivered to: ${failed.join(", ")}.`);
       }
-      setResultFor(null);
-      setShowNextRound(false);
-      setNextRoundName("");
-      setNextDate("");
-      load();
+      setScheduleOpen(false);
+      setScheduleEntry(null);
+      await load(true);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not record the result.");
+      setError(err.response?.data?.error?.message || "Could not save the interview.");
+    } finally {
+      setSavingSchedule(false);
     }
   };
+
+  const openFeedback = (entry: any) => {
+    const latest = latestFeedback(entry);
+    const previousInterviewers = interviewerEntriesFrom(entry);
+    setFeedbackEntry(entry);
+    setFeedbackInterviewers(previousInterviewers.length ? previousInterviewers : [{ name: "", email: "" }]);
+    setFeedbackForm({
+      interviewerName: entry.interviewerName || "",
+      rating: latest?.score ? String(Math.max(1, Math.round(Number(latest.score) / 20))) : "",
+      remarks: latest?.feedback || "",
+      outcome: latest?.recommendation && OUTCOME_OPTIONS.some((o) => o.value === latest.recommendation) ? latest.recommendation : "",
+      nextRound: "",
+      nextDate: "",
+    });
+    setFeedbackErrors({});
+    setError("");
+  };
+
+  const closeFeedback = () => {
+    if (savingFeedback) return;
+    setFeedbackEntry(null);
+    setFeedbackInterviewers([{ name: "", email: "" }]);
+  };
+
+  const selectFeedbackInterviewer = (index: number, value: string) => {
+    const selected = interviewerOptions.find((entry) => interviewerEntryKey(entry) === value);
+    setFeedbackInterviewers((current) => current.map((entry, entryIndex) => entryIndex === index ? { name: selected?.name ?? "", email: selected?.email ?? "" } : entry));
+    setFeedbackErrors((current) => { const next = { ...current }; delete next.interviewers; return next; });
+  };
+
+  const updateFeedbackInterviewer = (index: number, key: "name" | "email", value: string) => {
+    setFeedbackInterviewers((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, [key]: value } : entry));
+    setFeedbackErrors((current) => { const next = { ...current }; delete next.interviewers; return next; });
+  };
+
+  const addFeedbackInterviewer = () => {
+    setFeedbackInterviewers((current) => [...current, { name: "", email: "" }]);
+  };
+
+  const removeFeedbackInterviewer = (index: number) => {
+    setFeedbackInterviewers((current) => current.length === 1 ? current : current.filter((_, entryIndex) => entryIndex !== index));
+  };
+
+  const updateFeedback = (key: string, value: string) => {
+    setFeedbackForm((current) => ({ ...current, [key]: value }));
+    setFeedbackErrors((current) => ({ ...current, [key]: "" }));
+  };
+
+  const submitFeedback = async () => {
+    if (!feedbackEntry) return;
+    const errors: Record<string, string> = {};
+    if (!feedbackForm.rating) errors.rating = "Choose an overall rating.";
+    if (!feedbackForm.remarks.trim()) errors.remarks = "Add the interview remarks.";
+    if (feedbackForm.outcome === "NEXT_ROUND") {
+      if (!feedbackForm.nextDate) errors.nextDate = "Choose when the next round is scheduled.";
+      const cleanNextInterviewers = feedbackInterviewers.map((entry) => ({ name: entry.name.trim(), email: entry.email.trim() })).filter((entry) => entry.name || entry.email);
+      if (cleanNextInterviewers.length === 0) {
+        errors.interviewers = "Add at least one interviewer for the next round.";
+      } else if (cleanNextInterviewers.some((entry) => !entry.name || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(entry.email))) {
+        errors.interviewers = "Each interviewer for the next round needs a name and a valid email address.";
+      }
+    }
+    setFeedbackErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    setSavingFeedback(true);
+    setError("");
+    try {
+      await hrApi.interviewFeedback(feedbackEntry.id, {
+        interviewerName: feedbackInterviewers.map((entry) => entry.name.trim()).filter(Boolean).join(", ") || feedbackForm.interviewerName.trim() || feedbackEntry.interviewerName || undefined,
+        score: Number(feedbackForm.rating) * 20,
+        feedback: feedbackForm.remarks.trim(),
+        recommendation: feedbackForm.outcome || null,
+      });
+
+      if (feedbackForm.outcome) {
+        const cleanNextInterviewers = feedbackInterviewers.map((entry) => ({ name: entry.name.trim(), email: entry.email.trim() || null })).filter((entry) => entry.name);
+        const resultResponse = await hrApi.interviewResult(feedbackEntry.id, {
+          result: feedbackForm.outcome,
+          remarks: feedbackForm.remarks.trim(),
+          nextRound: feedbackForm.outcome === "NEXT_ROUND" ? feedbackForm.nextRound.trim() || undefined : undefined,
+          nextScheduledAt:
+            feedbackForm.outcome === "NEXT_ROUND" && feedbackForm.nextDate
+              ? new Date(feedbackForm.nextDate).toISOString()
+              : undefined,
+          nextInterviewers: feedbackForm.outcome === "NEXT_ROUND" ? cleanNextInterviewers : undefined,
+        });
+        const failed = resultResponse?.data?.nextInterviewerEmails?.failed ?? [];
+        if (feedbackForm.outcome === "SELECTED") window.setTimeout(() => navigate("/hr/final-selection"), 150);
+        setMessage("Interview feedback and outcome recorded.");
+        if (failed.length) setError(`Feedback saved, but the next-round email could not be delivered to: ${failed.join(", ")}.`);
+      } else {
+        setMessage("Interview feedback recorded.");
+      }
+
+      setFeedbackEntry(null);
+      await load(true);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not record the interview feedback.");
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelEntry) return;
+    setCancelling(true);
+    setError("");
+    try {
+      await hrApi.cancelInterview(cancelEntry.id, { reason: "Cancelled by HR" });
+      setMessage("Interview cancelled.");
+      setCancelEntry(null);
+      await load(true);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not cancel the interview.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const invitationContent = useMemo(() => {
+    if (!inviteEntry) return { subject: "", body: "", email: "", candidate: "", job: "" };
+    const candidate = inviteEntry.application?.candidate;
+    const job = inviteEntry.application?.jobOpening;
+    const candidateName = candidate?.fullName || "Candidate";
+    const jobTitle = job?.title || "the role";
+    const email = candidate?.email || "";
+    const subject = `Interview invitation – ${jobTitle} (${inviteEntry.round})`;
+    const lines = [
+      `Dear ${candidateName},`,
+      "",
+      `Thank you for your application for the position of ${jobTitle}. We would like to invite you to the ${inviteEntry.round} of the interview process.`,
+      "",
+      `Date: ${formatDate(inviteEntry.scheduledAt)}`,
+      `Time: ${formatTime(inviteEntry.scheduledAt)} (${inviteEntry.timezone || "Asia/Kolkata"})`,
+      `Mode: ${inviteEntry.mode === "ONLINE" ? "Online" : "Offline"}`,
+      `${inviteEntry.mode === "ONLINE" ? "Meeting link" : "Venue"}: ${
+        inviteEntry.mode === "ONLINE" ? inviteEntry.meetingLink || "A link will be shared shortly" : inviteEntry.location || "To be confirmed"
+      }`,
+      `Interviewer: ${interviewerSummary(inviteEntry).names || "HR Recruitment Team"} (${interviewerSummary(inviteEntry).label})`,
+      inviteEntry.instructions ? `Instructions: ${inviteEntry.instructions}` : null,
+      "",
+      "Please reply to confirm your availability. We look forward to speaking with you.",
+      "",
+      "Warm regards,",
+      "Ecometrix Talent Acquisition Team",
+    ].filter((line) => line !== null);
+    return { subject, body: lines.join("\n"), email, candidate: candidateName, job: jobTitle };
+  }, [inviteEntry]);
+
+  const copyInvitation = async () => {
+    try {
+      await navigator.clipboard.writeText(`${invitationContent.subject}\n\n${invitationContent.body}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setError("Could not copy the invitation. Select the preview text and copy it manually.");
+    }
+  };
+
+  const mailtoHref = invitationContent.email
+    ? `mailto:${invitationContent.email}?subject=${encodeURIComponent(invitationContent.subject)}&body=${encodeURIComponent(invitationContent.body)}`
+    : undefined;
+
+  const columns: Column<any>[] = [
+    {
+      key: "candidate",
+      header: "Candidate",
+      render: (row) => (
+        <div className="cell-user">
+          <div className="avatar">{initials(row.application?.candidate?.fullName || "")}</div>
+          <div className="cell-user__text">
+            <div className="cell-user__name">{row.application?.candidate?.fullName || "Candidate"}</div>
+            <div className="cell-user__sub">{row.application?.jobOpening?.title || "—"}</div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "round",
+      header: "Round",
+      render: (row) => row.round || "—",
+    },
+    {
+      key: "interviewer",
+      header: "Interviewer",
+      render: (row) => (
+        <div>
+          <span>{interviewerSummary(row).names || "—"}</span>
+          <div className="cell-muted">{interviewerSummary(row).label}</div>
+        </div>
+      ),
+    },
+    {
+      key: "scheduledAt",
+      header: "Scheduled",
+      render: (row) => (
+        <div>
+          <div>{formatDateTime(row.scheduledAt)}</div>
+          <div className="cell-muted">{relativeDay(row.scheduledAt)}</div>
+        </div>
+      ),
+    },
+    {
+      key: "mode",
+      header: "Mode",
+      render: (row) => (
+        <div>
+          <span className={`badge ${row.mode === "ONLINE" ? "badge--blue" : "badge--grey"}`}>
+            {row.mode === "ONLINE" ? "Online" : "Offline"}
+          </span>
+          {row.mode !== "ONLINE" && row.location && <div className="cell-muted">{row.location}</div>}
+          {row.mode === "ONLINE" && row.meetingLink && (
+            <div className="cell-muted">
+              <a href={row.meetingLink} target="_blank" rel="noreferrer">Meeting link</a>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "feedback",
+      header: "Feedback",
+      render: (row) => {
+        const latest = latestFeedback(row);
+        if (!latest) return <span className="cell-muted">Not recorded</span>;
+        return (
+          <div>
+            <span className="cell-strong">{latest.score != null ? `${Number(latest.score)}/100` : "Recorded"}</span>
+            <div className="cell-muted">{String(latest.recommendation || "Feedback saved").replace(/_/g, " ")}</div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      className: "text-right",
+      render: (row) => {
+        const active = row.status === "SCHEDULED" || row.status === "RESCHEDULED";
+        return (
+          <div className="cell-actions">
+            {row.status !== "CANCELLED" && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onClick={() => { setInviteEntry(row); setCopied(false); }}
+                title="Send interview invitation"
+                aria-label={`Send interview invitation to ${row.application?.candidate?.fullName || "candidate"}`}
+              >
+                <Mail size={16} />
+              </button>
+            )}
+            {active && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--icon"
+                  onClick={() => openEntrySchedule(row, "edit")}
+                  title="Edit interview"
+                  aria-label="Edit interview"
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--icon"
+                  onClick={() => openEntrySchedule(row, "reschedule")}
+                  title="Reschedule interview"
+                  aria-label="Reschedule interview"
+                >
+                  <RotateCcw size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--danger-ghost btn--icon"
+                  onClick={() => setCancelEntry(row)}
+                  title="Cancel interview"
+                  aria-label="Cancel interview"
+                >
+                  <XCircle size={16} />
+                </button>
+              </>
+            )}
+            {row.status !== "CANCELLED" && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--icon"
+                onClick={() => openFeedback(row)}
+                title="Record feedback"
+                aria-label="Record interview feedback"
+              >
+                <ClipboardList size={16} />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
 
   return (
-    <div className="min-h-screen surface-app p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold ink-body tracking-tight">Interview Scheduling</h1>
-          <p className="text-sm ink-soft mt-0.5">Schedule rounds, record feedback and move candidates forward.</p>
+    <div className="page">
+      <PageHeader
+        eyebrow="Ecometrix · Talent Acquisition"
+        title="Interview Management"
+        subtitle="Schedule the interview rounds of the shortlisted candidates, track their status and record the interview feedback."
+        actions={
+          <>
+            <Button variant="outline" icon={RefreshCw} onClick={() => void load(true)} loading={refreshing}>
+              Refresh data
+            </Button>
+            <Button icon={CalendarPlus} onClick={openCreate}>
+              Schedule Interview
+            </Button>
+          </>
+        }
+      />
+
+      {message && (
+        <div className="notice notice--success" role="status">
+          <div className="notice__body">{message}</div>
         </div>
-        <button className="btn-primary" onClick={() => setShowCreate(!showCreate)}>
-          {showCreate ? "Cancel" : "+ Schedule Interview"}
-        </button>
-      </div>
-
-      {error && <div className="mb-5 rounded-lg bg-orange-50 border border-orange-200 px-4 py-3 text-sm text-orange-800">{error}</div>}
-
-      {showCreate && (
-        <div className="card p-5 mb-5">
-          <h3 className="font-bold ink-body mb-4">Schedule Interview</h3>
-          <form onSubmit={submit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex flex-col gap-1.5 md:col-span-2">
-                <label className="text-sm font-semibold ink-soft">Candidate (shortlisted)</label>
-                <select className="input" required value={form.applicationId || ""} onChange={(e) => setForm((p) => ({ ...p, applicationId: e.target.value }))}>
-                  <option value="">Select candidate…</option>
-                  {applications.map((a: any) => (
-                    <option key={a.id} value={a.id}>{a.candidate?.fullName} — {a.jobOpening?.title}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Round</label>
-                <input className="input" value={form.round} onChange={(e) => setForm((p) => ({ ...p, round: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Date &amp; time</label>
-                <input className="input" type="datetime-local" required value={form.scheduledAt || ""} onChange={(e) => setForm((p) => ({ ...p, scheduledAt: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Mode</label>
-                <select className="input" value={form.mode} onChange={(e) => setForm((p) => ({ ...p, mode: e.target.value }))}>
-                  <option value="ONLINE">Online</option>
-                  <option value="OFFLINE">Offline</option>
-                  <option value="PHONE">Phone</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Interviewer</label>
-                <input className="input" value={form.interviewerName || ""} onChange={(e) => setForm((p) => ({ ...p, interviewerName: e.target.value }))} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold ink-soft">Meeting link</label>
-                <input className="input" type="url" value={form.meetingLink || ""} onChange={(e) => setForm((p) => ({ ...p, meetingLink: e.target.value }))} />
-              </div>
-            </div>
-            <button className="btn-primary" disabled={saving}>{saving ? "Scheduling…" : "Schedule Interview"}</button>
-          </form>
+      )}
+      {error && (
+        <div className="notice notice--error" role="alert">
+          <div className="notice__body">{error}</div>
         </div>
       )}
 
-      <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#171717]/10 flex items-center justify-between">
-          <h3 className="font-bold ink-body">Interviews</h3>
-          <span className="text-xs ink-soft">{items.length} scheduled</span>
+      <div className="ta-interview-summary">
+        <div className="ta-interview-summary__item">
+          <span className="ta-interview-summary__label">Upcoming</span>
+          <span className="ta-interview-summary__value">{counts.scheduled}</span>
         </div>
-        {loading ? (
-          <div className="h-64 flex items-center justify-center ink-soft">Loading…</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="table min-w-[900px]">
-              <thead>
-                <tr>
-                  <th>#</th><th>Candidate</th><th>Position</th><th>Round</th><th>Date / Time</th>
-                  <th>Mode</th><th>Interviewer</th><th>Status</th><th>Result</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((i: any, idx: number) => (
-                  <tr key={i.id}>
-                    <td className="ink-soft">{idx + 1}</td>
-                    <td className="font-medium ink-body">{i.application?.candidate?.fullName}</td>
-                    <td className="ink-soft">{i.application?.jobOpening?.title}</td>
-                    <td className="ink-soft">{i.round}</td>
-                    <td className="ink-soft text-xs">{new Date(i.scheduledAt).toLocaleString()}</td>
-                    <td><span className="badge border-[#171717]/15 bg-[#171717]/5 ink-soft">{i.mode}</span></td>
-                    <td className="ink-soft">{i.interviewerName || "—"}</td>
-                    <td><span className="badge border-[#171717]/15 bg-[#171717]/5 ink-soft">{i.status}</span></td>
-                    <td className="ink-soft text-xs">{String(i.result || "PENDING").replace(/_/g, " ")}</td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {i.status !== "CANCELLED" && (!i.result || i.result === "PENDING") && (
-                          <button className="btn-xs btn-primary whitespace-nowrap" onClick={() => { setResultFor(i); setError(""); }}>
-                            Record result
-                          </button>
-                        )}
-                        {i.status !== "CANCELLED" && (
-                          <button className="btn-xs btn-outline whitespace-nowrap" onClick={() => cancel(i.id)}>Cancel</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+        <div className="ta-interview-summary__item">
+          <span className="ta-interview-summary__label">Completed</span>
+          <span className="ta-interview-summary__value">{counts.completed}</span>
+        </div>
+        <div className="ta-interview-summary__item">
+          <span className="ta-interview-summary__label">Cancelled</span>
+          <span className="ta-interview-summary__value">{counts.cancelled}</span>
+        </div>
+        <div className="ta-interview-summary__item">
+          <span className="ta-interview-summary__label">Total records</span>
+          <span className="ta-interview-summary__value">{counts.all}</span>
+        </div>
+      </div>
+
+      <div className="ta-dashboard-grid">
+        <section className="card">
+          <div className="card__header">
+            <div>
+              <div className="card__title">Interview calendar</div>
+              <div className="card__subtitle">Upcoming rounds grouped by day</div>
+            </div>
+          </div>
+          <div className="card__body">
+            {calendarDays.length === 0 ? (
+              <div className="empty-state">
+                <span className="empty-state__icon">
+                  <CalendarClock size={28} aria-hidden="true" />
+                </span>
+                <p className="empty-state__title">No interviews in the calendar</p>
+                <p className="empty-state__text">Scheduled rounds appear here as soon as an interview is confirmed.</p>
+              </div>
+            ) : (
+              <div className="ta-calendar">
+                {calendarDays.map(([day, entries]) => (
+                  <div className="ta-calendar__day" key={day}>
+                    <div className="ta-calendar__day-label">{day}</div>
+                    <ul className="ta-calendar__list">
+                      {entries.map((entry) => (
+                        <li className="ta-calendar__item" key={entry.id}>
+                          <span className="ta-calendar__time">{formatTime(entry.scheduledAt)}</span>
+                          <div className="ta-calendar__body">
+                            <div className="ta-calendar__title">
+                              {entry.application?.candidate?.fullName || "Candidate"} · {entry.round}
+                            </div>
+                            <div className="ta-calendar__meta">
+                              {entry.interviewerName || "Interviewer"} ·{" "}
+                              {entry.mode === "ONLINE" ? "Online" : entry.location || "Offline"}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-                {items.length === 0 && (
-                  <tr><td colSpan={10} className="text-center py-8 ink-soft">No interviews scheduled yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Forward to offer modal */}
-      {selectedForOffer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="card w-full max-w-md p-6 shadow-2xl text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-[#659616]/15 flex items-center justify-center mb-4">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#659616" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-            </div>
-            <h3 className="text-lg font-extrabold ink-body">Candidate Selected</h3>
-            <p className="text-sm ink-soft mt-1.5">
-              <span className="font-semibold ink-body">{selectedForOffer.application?.candidate?.fullName}</span> for{" "}
-              <span className="font-semibold ink-body">{selectedForOffer.application?.jobOpening?.title}</span> has been moved to SELECTED and is ready for an offer letter.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-2 mt-6">
-              <button className="btn-ghost sm:flex-1" onClick={() => setSelectedForOffer(null)}>Later</button>
-              <button
-                className="btn-primary sm:flex-1"
-                onClick={() => navigate(`/hr/offers?applicationId=${selectedForOffer.application?.id ?? ""}`)}
-              >
-                Create Offer Letter →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Result modal */}
-      {resultFor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="card w-full max-w-lg p-6 shadow-2xl">
-            <h3 className="text-lg font-extrabold ink-body mb-1">Interview Result</h3>
-            <p className="text-sm ink-soft mb-5">
-              {resultFor.application?.candidate?.fullName} · {resultFor.application?.jobOpening?.title} · {resultFor.round}
-            </p>
-
-            <div className="flex flex-col gap-1.5 mb-4">
-              <label className="text-sm font-semibold ink-soft">Remarks</label>
-              <textarea
-                className="input"
-                rows={2}
-                defaultValue={resultFor.remarks || ""}
-                onChange={(e) => setResultFor({ ...resultFor, remarks: e.target.value })}
-                placeholder="Feedback shared with the candidate (optional)"
-              />
-            </div>
-
-            {showNextRound && (
-              <div className="grid grid-cols-2 gap-3 mb-4 p-3 rounded-lg bg-[#8BC34A]/10 border border-[#8BC34A]/25">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold ink-soft">Next round name</label>
-                  <input className="input" value={nextRoundName} onChange={(e) => setNextRoundName(e.target.value)} placeholder="Technical Round 2" autoFocus />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold ink-soft">Schedule date</label>
-                  <input className="input" type="datetime-local" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-                </div>
               </div>
             )}
+          </div>
+        </section>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {RESULT_OPTIONS.map((o) => (
+        <section className="card">
+          <div className="card__header">
+            <div>
+              <div className="card__title">Interview records</div>
+              <div className="card__subtitle">All scheduled, completed and cancelled rounds</div>
+            </div>
+          </div>
+          <div className="card__body">
+            <div className="page-toolbar">
+              <div className="search-box">
+                <span className="search-box__icon">
+                  <Search size={16} aria-hidden="true" />
+                </span>
+                <input
+                  type="search"
+                  className="input"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by candidate or interviewer"
+                  aria-label="Search interview records"
+                />
+              </div>
+              <div className="filters">
+                {FILTERS.map((filter) => (
+                  <button
+                    type="button"
+                    key={filter.key}
+                    className={`ta-filter-chip ${statusFilter === filter.key ? "active" : ""}`}
+                    onClick={() => setStatusFilter(filter.key)}
+                  >
+                    {filter.label} <span className="ta-filter-chip__count">{counts[filter.key]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <DataTable
+              columns={columns}
+              rows={visibleEntries}
+              rowKey={(row) => row.id}
+              loading={loading}
+              empty="No interviews in this view. Schedule an interview from the shortlisted candidates to build the interview calendar."
+              mobileTitle={(row) => row.application?.candidate?.fullName || "Candidate"}
+              mobileMeta={(row) => `${row.round} · ${formatDateTime(row.scheduledAt)}`}
+            />
+          </div>
+        </section>
+      </div>
+
+      <Modal
+        open={scheduleOpen}
+        onClose={closeSchedule}
+        title={
+          scheduleMode === "reschedule" ? "Reschedule interview" : scheduleMode === "edit" ? "Edit interview" : "Schedule interview"
+        }
+        subtitle="Interview rounds are validated before they are saved"
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={closeSchedule} disabled={savingSchedule}>
+              Cancel
+            </Button>
+            <Button onClick={submitSchedule} loading={savingSchedule}>
+              {scheduleMode === "create" ? "Schedule interview" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <div className="field field--full">
+            <Select
+              label="Candidate"
+              required
+              value={scheduleForm.applicationId}
+              onChange={(event) => updateSchedule("applicationId", event.target.value)}
+              error={scheduleErrors.applicationId}
+              placeholder="Select a shortlisted candidate"
+              options={applications
+                .filter((application: any) => application.status === "SHORTLISTED" || application.id === scheduleForm.applicationId)
+                .map((application: any) => ({
+                  value: application.id,
+                  label: `${application.candidate?.fullName || "Candidate"} · ${application.jobOpening?.title || "Role"}`,
+                }))}
+              disabled={scheduleMode !== "create"}
+            />
+          </div>
+
+          <Select
+            label="Interview round"
+            required
+            value={scheduleForm.round}
+            onChange={(event) => updateSchedule("round", event.target.value)}
+            error={scheduleErrors.round}
+            placeholder="Select the round"
+            options={ROUND_OPTIONS}
+            disabled={scheduleMode !== "create"}
+          />
+
+          <div className="field field--full">
+            <div className="field__label">
+              Interviewers <span className="field__required" aria-hidden="true">*</span>
+            </div>
+            <div className="space-y-3">
+              {(scheduleForm.interviewers || []).map((entry: any, index: number) => {
+                const selectedKey = interviewerOptions.find((option) => interviewerEntryKey(option) === interviewerEntryKey(entry)) ? interviewerEntryKey(entry) : "__MANUAL__";
+                return (
+                <div key={index} className="interviewer-entry">
+                  <div className="interviewer-entry__picker">
+                    <label className="field__label" htmlFor={`interviewer-option-${index}`}>Select interviewer</label>
+                    <select
+                      id={`interviewer-option-${index}`}
+                      className="select"
+                      value={selectedKey}
+                      onChange={(event) => selectScheduleInterviewer(index, event.target.value)}
+                    >
+                      <option value="__MANUAL__">Other — add name and email manually</option>
+                      {interviewerOptions.map((option) => <option key={interviewerEntryKey(option)} value={interviewerEntryKey(option)}>{option.name}{option.email ? ` — ${option.email}` : ""}</option>)}
+                    </select>
+                  </div>
+                  <Input
+                    label={`Interviewer ${index + 1} name`}
+                    required
+                    value={entry.name}
+                    onChange={(event) => updateInterviewer(index, "name", event.target.value)}
+                    placeholder="Full name"
+                  />
+                  <Input
+                    label="Email"
+                    type="email"
+                    required
+                    value={entry.email}
+                    onChange={(event) => updateInterviewer(index, "email", event.target.value)}
+                    placeholder="interviewer@company.com"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--icon"
+                    onClick={() => removeInterviewer(index)}
+                    disabled={(scheduleForm.interviewers || []).length === 1}
+                    aria-label={`Remove interviewer ${index + 1}`}
+                    title="Remove interviewer"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                );
+              })}
+              <div className="field__hint">Choose a previously used interviewer, or choose "Other" and add their name and email manually.</div>
+              {scheduleErrors.interviewers && <div className="field__error">{scheduleErrors.interviewers}</div>}
+              <div className="notice notice--info" role="status">
+                <div className="notice__body">
+                  <div className="notice__title">
+                    Interview type: {(() => { const count = (scheduleForm.interviewers || []).filter((entry: any) => entry.name.trim()).length; return count > 3 ? "Panel Interview" : count >= 2 ? "Multiple Interview" : count === 1 ? "Individual Interview" : "—"; })()}
+                  </div>
+                  One interviewer is an individual interview, 2–3 is a multiple interview, and 4+ is a panel interview.
+                </div>
+              </div>
+              <Button variant="outline" icon={Plus} onClick={addInterviewer} type="button">Add interviewer</Button>
+            </div>
+          </div>
+
+          <Input
+            label="Interview date"
+            type="date"
+            required
+            value={scheduleForm.date}
+            onChange={(event) => updateSchedule("date", event.target.value)}
+            error={scheduleErrors.date}
+          />
+
+          <Input
+            label="Interview time"
+            type="time"
+            required
+            value={scheduleForm.time}
+            onChange={(event) => updateSchedule("time", event.target.value)}
+            error={scheduleErrors.time}
+          />
+
+          <Select
+            label="Interview mode"
+            required
+            value={scheduleForm.mode}
+            onChange={(event) => updateSchedule("mode", event.target.value)}
+            options={MODE_OPTIONS}
+          />
+
+          {scheduleForm.mode === "ONLINE" ? (
+            <Input
+              label="Meeting link"
+              required
+              value={scheduleForm.meetingLink}
+              onChange={(event) => updateSchedule("meetingLink", event.target.value)}
+              error={scheduleErrors.meetingLink}
+              placeholder="https://meet.example.com/room"
+            />
+          ) : (
+            <Input
+              label="Interview venue"
+              required
+              value={scheduleForm.location}
+              onChange={(event) => updateSchedule("location", event.target.value)}
+              error={scheduleErrors.location}
+              placeholder="City · Room"
+            />
+          )}
+
+          <div className="field field--full">
+            <Textarea
+              label="Interview notes"
+              value={scheduleForm.instructions}
+              onChange={(event) => updateSchedule("instructions", event.target.value)}
+              placeholder="Focus areas for this round"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(feedbackEntry)}
+        onClose={closeFeedback}
+        title="Interview feedback"
+        subtitle={
+          feedbackEntry
+            ? `${feedbackEntry.application?.candidate?.fullName || "Candidate"} · ${feedbackEntry.round} round`
+            : undefined
+        }
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={closeFeedback} disabled={savingFeedback}>
+              Cancel
+            </Button>
+            <Button onClick={submitFeedback} loading={savingFeedback}>
+              Submit feedback
+            </Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <div className="field field--full">
+            <Input
+              label="Interviewer name"
+              value={feedbackForm.interviewerName}
+              onChange={(event) => updateFeedback("interviewerName", event.target.value)}
+              placeholder="Who conducted this round?"
+            />
+          </div>
+
+          <div className="field field--full">
+            <span className="field__label">
+              Overall rating
+              <span className="field__required" aria-hidden="true">*</span>
+            </span>
+            <div className="ta-rating" role="radiogroup" aria-label="Overall rating">
+              {[1, 2, 3, 4, 5].map((score) => (
                 <button
-                  key={o.key}
-                  onClick={() => {
-                    if (o.key === "NEXT_ROUND" && !showNextRound) {
-                      setShowNextRound(true);
-                      return;
-                    }
-                    applyResult(o.key);
-                  }}
-                  className={`px-3 py-2.5 rounded-lg border text-sm font-semibold transition-colors ${o.tone} hover:opacity-80`}
+                  type="button"
+                  key={score}
+                  role="radio"
+                  aria-checked={feedbackForm.rating === String(score)}
+                  aria-label={`${score} out of 5`}
+                  className={`ta-rating__option ${feedbackForm.rating === String(score) ? "active" : ""}`}
+                  onClick={() => updateFeedback("rating", String(score))}
                 >
-                  <span className="mr-1.5">{o.icon}</span>
-                  {o.label}
+                  <Star size={14} aria-hidden="true" />
+                  {score}
                 </button>
               ))}
             </div>
+            {feedbackErrors.rating && <span className="field__error">{feedbackErrors.rating}</span>}
+          </div>
 
-            <div className="flex justify-end gap-2 mt-5">
-              <button className="btn-ghost" onClick={() => { setResultFor(null); setShowNextRound(false); setNextRoundName(""); setNextDate(""); }}>Cancel</button>
-            </div>
+          <div className="field field--full">
+            <Select
+              label="Outcome"
+              value={feedbackForm.outcome}
+              onChange={(event) => updateFeedback("outcome", event.target.value)}
+              placeholder="No outcome change"
+              options={OUTCOME_OPTIONS}
+            />
+          </div>
+
+          {feedbackForm.outcome === "NEXT_ROUND" && (
+            <>
+              <div className="field field--full">
+                <div className="field__label">Interviewers for the next round <span className="field__required" aria-hidden="true">*</span></div>
+                <div className="interviewer-list">
+                  {feedbackInterviewers.map((entry, index) => {
+                    const selectedKey = interviewerOptions.find((option) => interviewerEntryKey(option) === interviewerEntryKey(entry)) ? interviewerEntryKey(entry) : "__MANUAL__";
+                    return (
+                      <div className="interviewer-entry" key={index}>
+                        <div className="interviewer-entry__picker">
+                          <label className="field__label" htmlFor={`next-interviewer-option-${index}`}>Select interviewer</label>
+                          <select id={`next-interviewer-option-${index}`} className="select" value={selectedKey} onChange={(event) => selectFeedbackInterviewer(index, event.target.value)}>
+                            <option value="__MANUAL__">Other — add name and email manually</option>
+                            {interviewerOptions.map((option) => <option key={interviewerEntryKey(option)} value={interviewerEntryKey(option)}>{option.name}{option.email ? ` — ${option.email}` : ""}</option>)}
+                          </select>
+                        </div>
+                        <Input label={`Interviewer ${index + 1} name`} required value={entry.name} onChange={(event) => updateFeedbackInterviewer(index, "name", event.target.value)} placeholder="Full name" />
+                        <Input label="Email" type="email" required value={entry.email} onChange={(event) => updateFeedbackInterviewer(index, "email", event.target.value)} placeholder="interviewer@company.com" />
+                        <button type="button" className="btn btn--ghost btn--icon" onClick={() => removeFeedbackInterviewer(index)} disabled={feedbackInterviewers.length === 1} aria-label={`Remove interviewer ${index + 1}`} title="Remove interviewer"><Trash2 size={16} /></button>
+                      </div>
+                    );
+                  })}
+                  <div className="field__hint">Pick an interviewer used earlier, or choose "Other" and enter their name and email manually.</div>
+                  {feedbackErrors.interviewers && <div className="field__error">{feedbackErrors.interviewers}</div>}
+                  <Button variant="outline" icon={Plus} onClick={addFeedbackInterviewer} type="button">Add interviewer</Button>
+                </div>
+              </div>
+              <Input
+                label="Next round"
+                value={feedbackForm.nextRound}
+                onChange={(event) => updateFeedback("nextRound", event.target.value)}
+                placeholder="Technical Round 2"
+              />
+              <Input
+                label="Next round date & time"
+                type="datetime-local"
+                required
+                value={feedbackForm.nextDate}
+                onChange={(event) => updateFeedback("nextDate", event.target.value)}
+                error={feedbackErrors.nextDate}
+              />
+            </>
+          )}
+
+          <div className="field field--full">
+            <Textarea
+              label="Interview remarks"
+              required
+              value={feedbackForm.remarks}
+              onChange={(event) => updateFeedback("remarks", event.target.value)}
+              error={feedbackErrors.remarks}
+              placeholder="Summarise the strengths and the gaps observed in this round"
+            />
           </div>
         </div>
-      )}
+      </Modal>
+
+      <Modal
+        open={Boolean(inviteEntry)}
+        onClose={() => setInviteEntry(null)}
+        title="Interview Details"
+        subtitle={
+          inviteEntry
+            ? `${invitationContent.candidate} · ${inviteEntry.round} · ${invitationContent.job}`
+            : undefined
+        }
+        size="lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setInviteEntry(null)}>
+              Close
+            </Button>
+            <Button variant="secondary" onClick={copyInvitation}>
+              {copied ? "Copied ✓" : "Copy invitation"}
+            </Button>
+            {mailtoHref && (
+              <a className="btn btn--primary" href={mailtoHref}>
+                <Mail size={16} aria-hidden="true" /> Open email draft
+              </a>
+            )}
+          </>
+        }
+      >
+        {inviteEntry && (
+          <>
+            <div className="detail-grid detail-grid--3">
+              <div className="detail-item">
+                <div className="detail-item__label">Candidate</div>
+                <div className="detail-item__value">{invitationContent.candidate}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-item__label">Position</div>
+                <div className="detail-item__value">{invitationContent.job}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-item__label">Interview round</div>
+                <div className="detail-item__value">{inviteEntry.round}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-item__label">Date</div>
+                <div className="detail-item__value">{formatDate(inviteEntry.scheduledAt)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-item__label">Time</div>
+                <div className="detail-item__value">{formatTime(inviteEntry.scheduledAt)}</div>
+              </div>
+              <div className="detail-item">
+                <div className="detail-item__label">Mode</div>
+                <div className="detail-item__value">
+                  {inviteEntry.mode === "ONLINE" ? "Online" : "Offline"}
+                </div>
+              </div>
+              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                <div className="detail-item__label">Interviewer</div>
+                <div className="detail-item__value">
+                  {inviteEntry.interviewerName || "HR Recruitment Team"}
+                  {inviteEntry.interviewerEmail ? ` · ${inviteEntry.interviewerEmail}` : ""}
+                </div>
+              </div>
+              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
+                <div className="detail-item__label">
+                  {inviteEntry.mode === "ONLINE" ? "Meeting link" : "Venue"}
+                </div>
+                <div className="detail-item__value">
+                  {inviteEntry.mode === "ONLINE"
+                    ? inviteEntry.meetingLink || "Link not provided"
+                    : inviteEntry.location || "Venue not provided"}
+                </div>
+              </div>
+            </div>
+
+            <div className="ta-panel" style={{ marginTop: "1.25rem" }}>
+              <div className="ta-panel__header">
+                <Mail size={15} aria-hidden="true" /> Email preview
+              </div>
+              <div className="ta-email-preview">
+                <div className="ta-email-preview__subject">{invitationContent.subject}</div>
+                <pre className="ta-email-preview__body">{invitationContent.body}</pre>
+              </div>
+            </div>
+
+            {!invitationContent.email && (
+              <div className="notice notice--error" role="alert" style={{ marginTop: "1rem" }}>
+                <div className="notice__body">
+                  This candidate has no email address on file, so a draft cannot be opened. Copy the invitation and share it manually.
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(cancelEntry)}
+        onClose={() => (cancelling ? undefined : setCancelEntry(null))}
+        title="Cancel interview"
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setCancelEntry(null)} disabled={cancelling}>
+              Keep interview
+            </Button>
+            <Button variant="danger" onClick={confirmCancel} loading={cancelling}>
+              Cancel interview
+            </Button>
+          </>
+        }
+      >
+        <p>
+          {cancelEntry
+            ? `The ${cancelEntry.round} round of ${cancelEntry.application?.candidate?.fullName || "the candidate"} will be cancelled and the candidate will be notified.`
+            : "The interview will be cancelled."}
+        </p>
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedForOffer)}
+        onClose={() => setSelectedForOffer(null)}
+        title="Candidate selected"
+        size="sm"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setSelectedForOffer(null)}>
+              Later
+            </Button>
+            <Button
+              onClick={() => navigate(`/hr/offers?applicationId=${selectedForOffer?.application?.id ?? ""}`)}
+            >
+              Create Offer Letter
+            </Button>
+          </>
+        }
+      >
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto rounded-full bg-[#659616]/15 flex items-center justify-center mb-4">
+            <CheckCircle2 size={32} className="text-[#659616]" />
+          </div>
+          <p>
+            <span className="font-semibold ink-body">{selectedForOffer?.application?.candidate?.fullName}</span> for{" "}
+            <span className="font-semibold ink-body">{selectedForOffer?.application?.jobOpening?.title}</span> has been
+            moved to SELECTED and is ready for an offer letter.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

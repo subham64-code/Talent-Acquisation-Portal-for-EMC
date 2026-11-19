@@ -208,8 +208,10 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           detailTable([
             ["Employee ID", data.employeeCode],
             ["Official Email", data.email],
-            ["Link Expires", data.expiresAt ? new Date(String(data.expiresAt)).toLocaleString() : ""],
+            ["Link Validity", "No expiry — valid until you submit"],
           ]) +
+          p(`<strong>No sign-in or HR account is required.</strong> Use the secure button below.`) +
+          p(`<strong>This secure link never expires.</strong> If your profile is not submitted, we'll send an automatic reminder every 3 days until you complete it.`) +
           p(`This secure link is unique to you and is used only for your profile update. Please do not forward it.`),
         ctaLabel: "Update my information",
         ctaUrl: s(data, "link"),
@@ -285,6 +287,34 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
         ctaLabel: "View my applications",
         ctaUrl: s(data, "link", `${appUrl}/career`),
         ctaColor: "orange",
+      });
+      break;
+
+    case "interview_scheduled_interviewer":
+    case "interview_rescheduled_interviewer":
+      subject = `Interview ${templateKey === "interview_rescheduled_interviewer" ? "rescheduled" : "assigned"}: ${s(data, "candidateName", "Candidate")} · ${jobTitle}`;
+      html = layout({
+        title: templateKey === "interview_rescheduled_interviewer" ? "Your interview has been rescheduled" : "Interview assigned to you",
+        eyebrow: "Interviewer Brief",
+        preheader: `Interview brief for ${jobTitle}.`,
+        body:
+          p(`Dear ${esc(name)},`) +
+          p(`You have been assigned as <strong>${esc(s(data, "interviewType", "Interviewer"))}</strong> for the interview of <strong>${esc(s(data, "candidateName", "the candidate"))}</strong> for the role of <strong>${esc(jobTitle)}</strong>. Here are the details to prepare:`) +
+          detailTable([
+            ["Candidate", s(data, "candidateName", "—")],
+            ["Round", data.round],
+            ["Date & Time", data.scheduledAt ? new Date(String(data.scheduledAt)).toLocaleString() : ""],
+            ["Time Zone", data.timezone],
+            ["Mode", data.mode],
+            ["Location", data.location],
+            ["Meeting Link", data.meetingLink],
+            ["Interview Type", s(data, "interviewType", "INDIVIDUAL")],
+          ]) +
+          (data.instructions ? p(`<strong>Instructions:</strong> ${esc(data.instructions)}`) : "") +
+          p("Please review the candidate profile and join the interview on time."),
+        ctaLabel: data.meetingLink ? "Join Interview" : undefined,
+        ctaUrl: data.meetingLink ? s(data, "meetingLink") : undefined,
+        ctaColor: "green",
       });
       break;
 
@@ -402,6 +432,26 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           p(`Please coordinate the document collection and onboarding steps with the candidate.`),
         ctaLabel: "Open candidate profile",
         ctaUrl: s(data, "link"),
+      });
+      break;
+
+    case "offer_reminder":
+      subject = `Reminder: your offer from EMC - ${s(data, "jobTitle", "position")}`;
+      html = layout({
+        title: "Reminder to respond to your offer",
+        eyebrow: "Offer Reminder",
+        preheader: "Please review the offer and respond at your earliest convenience.",
+        body:
+          p(`Dear ${esc(name)},`) +
+          p(`This is a gentle reminder that we have not yet received your response for <strong>${esc(jobTitle)}</strong> at ${esc(company)}.`) +
+          detailTable([
+            ["Designation", data.designation],
+            ["Offer Valid Until", data.expiryDate ? new Date(String(data.expiryDate)).toLocaleDateString() : "Not specified"],
+          ]) +
+          p(`Please use the secure link below to accept or decline the offer.`),
+        ctaLabel: "Review and respond to the offer",
+        ctaUrl: s(data, "link", `${appUrl}/careers/jobs`),
+        ctaColor: "orange",
       });
       break;
 

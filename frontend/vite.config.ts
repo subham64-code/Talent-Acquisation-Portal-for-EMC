@@ -29,7 +29,6 @@ export default defineConfig({
         // Split heavy vendor libraries so they are cached independently of app code.
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
-          if (id.includes("recharts") || id.includes("d3-") || id.includes("victory")) return "charts";
           if (id.includes("react-router")) return "router";
           if (id.includes("@tanstack")) return "query";
           if (id.includes("axios")) return "http";

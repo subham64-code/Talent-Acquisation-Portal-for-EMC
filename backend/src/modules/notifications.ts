@@ -11,6 +11,15 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get(
+  "/email-logs",
+  asyncHandler(async (req, res) => {
+    if (req.auth!.type !== "HR") throw ApiError.forbidden("HR access required.");
+    const items = await prisma.emailLog.findMany({ orderBy: { createdAt: "desc" }, take: 6 });
+    return ok(res, { emailLogs: items });
+  }),
+);
+
+router.get(
   "/",
   asyncHandler(async (req, res) => {
     const { page, pageSize, skip, take } = getPagination(req);

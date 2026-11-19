@@ -31,7 +31,8 @@ function extractToken(req: Request): string | null {
   return null;
 }
 
-export async function authenticate(req: Request, _res: Response, next: NextFunction) {
+export async function authenticate(req: Request, _res: Response, next: NextFunction) {
+
   try {
     const token = extractToken(req);
     if (!token) throw ApiError.unauthorized();
@@ -130,7 +131,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
  * request proceeds with req.auth undefined. Used for endpoints that also accept
  * short-lived purpose tokens (e.g. file access links).
  */
-export async function optionalAuthenticate(req: Request, _res: Response, next: NextFunction) {
+export async function optionalAuthenticate(req: Request, _res: Response, next: NextFunction) {
+
   try {
     const token = extractToken(req);
     if (!token) return next();
@@ -189,7 +191,7 @@ export async function optionalAuthenticate(req: Request, _res: Response, next: N
 }
 
 export function requireAuth(...types: Array<"HR" | "CANDIDATE">) {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth) return next(ApiError.unauthorized());
     if (types.length && !types.includes(req.auth.type)) {
       return next(ApiError.forbidden("This area is not available for your account type."));
@@ -198,20 +200,20 @@ export function requireAuth(...types: Array<"HR" | "CANDIDATE">) {
   };
 }
 
-export function requireHr(req: Request, _res: Response, next: NextFunction) {
+export function requireHr(req: Request, _res: Response, next: NextFunction) {
   if (!req.auth) return next(ApiError.unauthorized());
   if (req.auth.type !== "HR") return next(ApiError.forbidden("HR access required."));
   next();
 }
 
-export function requireCandidate(req: Request, _res: Response, next: NextFunction) {
+export function requireCandidate(req: Request, _res: Response, next: NextFunction) {
   if (!req.auth) return next(ApiError.unauthorized());
   if (req.auth.type !== "CANDIDATE") return next(ApiError.forbidden("Candidate access required."));
   next();
 }
 
 export function requirePermission(...permissions: string[]) {
-  return (req: Request, _res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     const auth = req.auth;
     if (!auth) return next(ApiError.unauthorized());
     if (auth.type !== "HR") return next(ApiError.forbidden("HR access required."));
@@ -230,7 +232,7 @@ export function requirePermission(...permissions: string[]) {
  */
 export function departmentScope(auth: AuthContext | undefined): string[] | null {
   if (!auth || auth.type !== "HR") return [];
-  if (auth.roles.some((r) => ["SUPER_ADMIN", "HR_ADMIN", "HR_RECRUITER"].includes(r))) {
+  if (auth.roles.some((r) => ["SUPER_ADMIN", "IT_ADMIN", "HR_ADMIN", "HR_RECRUITER"].includes(r))) {
     return null;
   }
   return auth.departments;
