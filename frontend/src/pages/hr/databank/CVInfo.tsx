@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Eye, FileText, RefreshCw, Trash2, Upload, X } from "lucide-react";
+import { Download, Eye, FileText, Trash2, Upload, X } from "lucide-react";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery, useInvalidate } from "../../../hooks/useApiQuery";
 import { fileSize } from "./shared";

@@ -5,12 +5,9 @@ import {
   CalendarPlus,
   CheckCircle2,
   ClipboardList,
-  Mail,
   Pencil,
   RefreshCw,
-  RotateCcw,
   Search,
-  Star,
   XCircle,
   Plus,
   Trash2,
@@ -28,9 +25,21 @@ const ROUND_OPTIONS = [
   "Technical Round 1",
   "Technical Round 2",
   "Managerial Round",
-  "Director Round",
+  "Management/CEO Round",
   "Final Round",
 ];
+
+const RESULT_OPTIONS = [
+  { value: "GOOD", label: "Good" },
+  { value: "BEST", label: "Best" },
+  { value: "NOT_SATISFIED", label: "Not satisfied" },
+];
+
+const RESULT_LABELS: Record<string, string> = {
+  GOOD: "Good",
+  BEST: "Best",
+  NOT_SATISFIED: "Not satisfied",
+};
 
 const MODE_OPTIONS = [
   { value: "ONLINE", label: "Online" },
@@ -83,7 +92,7 @@ const emptySchedule = () => ({
 });
 
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
 
 const formatTime = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -134,7 +143,7 @@ export default function Interviews() {
   const [feedbackEntry, setFeedbackEntry] = useState<any>(null);
   const [feedbackForm, setFeedbackForm] = useState({
     interviewerName: "",
-    rating: "",
+    result: "",
     remarks: "",
     outcome: "",
     nextRound: "",
@@ -144,8 +153,7 @@ export default function Interviews() {
   const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
   const [savingFeedback, setSavingFeedback] = useState(false);
 
-  const [inviteEntry, setInviteEntry] = useState<any>(null);
-  const [copied, setCopied] = useState(false);
+
 
   const [cancelEntry, setCancelEntry] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -400,7 +408,7 @@ export default function Interviews() {
     setFeedbackInterviewers(previousInterviewers.length ? previousInterviewers : [{ name: "", email: "" }]);
     setFeedbackForm({
       interviewerName: entry.interviewerName || "",
-      rating: latest?.score ? String(Math.max(1, Math.round(Number(latest.score) / 20))) : "",
+      result: latest?.result && RESULT_LABELS[latest.result] ? latest.result : "",
       remarks: latest?.feedback || "",
       outcome: latest?.recommendation && OUTCOME_OPTIONS.some((o) => o.value === latest.recommendation) ? latest.recommendation : "",
       nextRound: "",
@@ -443,7 +451,7 @@ export default function Interviews() {
   const submitFeedback = async () => {
     if (!feedbackEntry) return;
     const errors: Record<string, string> = {};
-    if (!feedbackForm.rating) errors.rating = "Choose an overall rating.";
+    if (!feedbackForm.result) errors.result = "Choose the candidate result.";
     if (!feedbackForm.remarks.trim()) errors.remarks = "Add the interview remarks.";
     if (feedbackForm.outcome === "NEXT_ROUND") {
       if (!feedbackForm.nextDate) errors.nextDate = "Choose when the next round is scheduled.";
@@ -462,9 +470,9 @@ export default function Interviews() {
     try {
       await hrApi.interviewFeedback(feedbackEntry.id, {
         interviewerName: feedbackInterviewers.map((entry) => entry.name.trim()).filter(Boolean).join(", ") || feedbackForm.interviewerName.trim() || feedbackEntry.interviewerName || undefined,
-        score: Number(feedbackForm.rating) * 20,
         feedback: feedbackForm.remarks.trim(),
         recommendation: feedbackForm.outcome || null,
+        result: feedbackForm.result || null,
       });
 
       if (feedbackForm.outcome) {
@@ -511,50 +519,6 @@ export default function Interviews() {
       setCancelling(false);
     }
   };
-
-  const invitationContent = useMemo(() => {
-    if (!inviteEntry) return { subject: "", body: "", email: "", candidate: "", job: "" };
-    const candidate = inviteEntry.application?.candidate;
-    const job = inviteEntry.application?.jobOpening;
-    const candidateName = candidate?.fullName || "Candidate";
-    const jobTitle = job?.title || "the role";
-    const email = candidate?.email || "";
-    const subject = `Interview invitation – ${jobTitle} (${inviteEntry.round})`;
-    const lines = [
-      `Dear ${candidateName},`,
-      "",
-      `Thank you for your application for the position of ${jobTitle}. We would like to invite you to the ${inviteEntry.round} of the interview process.`,
-      "",
-      `Date: ${formatDate(inviteEntry.scheduledAt)}`,
-      `Time: ${formatTime(inviteEntry.scheduledAt)} (${inviteEntry.timezone || "Asia/Kolkata"})`,
-      `Mode: ${inviteEntry.mode === "ONLINE" ? "Online" : "Offline"}`,
-      `${inviteEntry.mode === "ONLINE" ? "Meeting link" : "Venue"}: ${
-        inviteEntry.mode === "ONLINE" ? inviteEntry.meetingLink || "A link will be shared shortly" : inviteEntry.location || "To be confirmed"
-      }`,
-      `Interviewer: ${interviewerSummary(inviteEntry).names || "HR Recruitment Team"} (${interviewerSummary(inviteEntry).label})`,
-      inviteEntry.instructions ? `Instructions: ${inviteEntry.instructions}` : null,
-      "",
-      "Please reply to confirm your availability. We look forward to speaking with you.",
-      "",
-      "Warm regards,",
-      "Ecometrix Talent Acquisition Team",
-    ].filter((line) => line !== null);
-    return { subject, body: lines.join("\n"), email, candidate: candidateName, job: jobTitle };
-  }, [inviteEntry]);
-
-  const copyInvitation = async () => {
-    try {
-      await navigator.clipboard.writeText(`${invitationContent.subject}\n\n${invitationContent.body}`);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2500);
-    } catch {
-      setError("Could not copy the invitation. Select the preview text and copy it manually.");
-    }
-  };
-
-  const mailtoHref = invitationContent.email
-    ? `mailto:${invitationContent.email}?subject=${encodeURIComponent(invitationContent.subject)}&body=${encodeURIComponent(invitationContent.body)}`
-    : undefined;
 
   const columns: Column<any>[] = [
     {
@@ -620,8 +584,8 @@ export default function Interviews() {
         if (!latest) return <span className="cell-muted">Not recorded</span>;
         return (
           <div>
-            <span className="cell-strong">{latest.score != null ? `${Number(latest.score)}/100` : "Recorded"}</span>
-            <div className="cell-muted">{String(latest.recommendation || "Feedback saved").replace(/_/g, " ")}</div>
+            <span className="cell-strong">{latest.result && RESULT_LABELS[latest.result] ? RESULT_LABELS[latest.result] : "Recorded"}</span>
+            <div className="cell-muted">{String(latest.recommendation || "No outcome change").replace(/_/g, " ")}</div>
           </div>
         );
       },
@@ -634,17 +598,6 @@ export default function Interviews() {
         const active = row.status === "SCHEDULED" || row.status === "RESCHEDULED";
         return (
           <div className="cell-actions">
-            {row.status !== "CANCELLED" && (
-              <button
-                type="button"
-                className="btn btn--ghost btn--icon"
-                onClick={() => { setInviteEntry(row); setCopied(false); }}
-                title="Send interview invitation"
-                aria-label={`Send interview invitation to ${row.application?.candidate?.fullName || "candidate"}`}
-              >
-                <Mail size={16} />
-              </button>
-            )}
             {active && (
               <>
                 <button
@@ -655,15 +608,6 @@ export default function Interviews() {
                   aria-label="Edit interview"
                 >
                   <Pencil size={16} />
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--icon"
-                  onClick={() => openEntrySchedule(row, "reschedule")}
-                  title="Reschedule interview"
-                  aria-label="Reschedule interview"
-                >
-                  <RotateCcw size={16} />
                 </button>
                 <button
                   type="button"
@@ -1036,27 +980,15 @@ export default function Interviews() {
           </div>
 
           <div className="field field--full">
-            <span className="field__label">
-              Overall rating
-              <span className="field__required" aria-hidden="true">*</span>
-            </span>
-            <div className="ta-rating" role="radiogroup" aria-label="Overall rating">
-              {[1, 2, 3, 4, 5].map((score) => (
-                <button
-                  type="button"
-                  key={score}
-                  role="radio"
-                  aria-checked={feedbackForm.rating === String(score)}
-                  aria-label={`${score} out of 5`}
-                  className={`ta-rating__option ${feedbackForm.rating === String(score) ? "active" : ""}`}
-                  onClick={() => updateFeedback("rating", String(score))}
-                >
-                  <Star size={14} aria-hidden="true" />
-                  {score}
-                </button>
-              ))}
-            </div>
-            {feedbackErrors.rating && <span className="field__error">{feedbackErrors.rating}</span>}
+            <Select
+              label="Candidate result"
+              required
+              value={feedbackForm.result}
+              onChange={(event) => updateFeedback("result", event.target.value)}
+              placeholder="Choose the result"
+              options={RESULT_OPTIONS}
+              error={feedbackErrors.result}
+            />
           </div>
 
           <div className="field field--full">
@@ -1124,101 +1056,6 @@ export default function Interviews() {
             />
           </div>
         </div>
-      </Modal>
-
-      <Modal
-        open={Boolean(inviteEntry)}
-        onClose={() => setInviteEntry(null)}
-        title="Interview Details"
-        subtitle={
-          inviteEntry
-            ? `${invitationContent.candidate} · ${inviteEntry.round} · ${invitationContent.job}`
-            : undefined
-        }
-        size="lg"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setInviteEntry(null)}>
-              Close
-            </Button>
-            <Button variant="secondary" onClick={copyInvitation}>
-              {copied ? "Copied ✓" : "Copy invitation"}
-            </Button>
-            {mailtoHref && (
-              <a className="btn btn--primary" href={mailtoHref}>
-                <Mail size={16} aria-hidden="true" /> Open email draft
-              </a>
-            )}
-          </>
-        }
-      >
-        {inviteEntry && (
-          <>
-            <div className="detail-grid detail-grid--3">
-              <div className="detail-item">
-                <div className="detail-item__label">Candidate</div>
-                <div className="detail-item__value">{invitationContent.candidate}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-item__label">Position</div>
-                <div className="detail-item__value">{invitationContent.job}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-item__label">Interview round</div>
-                <div className="detail-item__value">{inviteEntry.round}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-item__label">Date</div>
-                <div className="detail-item__value">{formatDate(inviteEntry.scheduledAt)}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-item__label">Time</div>
-                <div className="detail-item__value">{formatTime(inviteEntry.scheduledAt)}</div>
-              </div>
-              <div className="detail-item">
-                <div className="detail-item__label">Mode</div>
-                <div className="detail-item__value">
-                  {inviteEntry.mode === "ONLINE" ? "Online" : "Offline"}
-                </div>
-              </div>
-              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
-                <div className="detail-item__label">Interviewer</div>
-                <div className="detail-item__value">
-                  {inviteEntry.interviewerName || "HR Recruitment Team"}
-                  {inviteEntry.interviewerEmail ? ` · ${inviteEntry.interviewerEmail}` : ""}
-                </div>
-              </div>
-              <div className="detail-item" style={{ gridColumn: "1 / -1" }}>
-                <div className="detail-item__label">
-                  {inviteEntry.mode === "ONLINE" ? "Meeting link" : "Venue"}
-                </div>
-                <div className="detail-item__value">
-                  {inviteEntry.mode === "ONLINE"
-                    ? inviteEntry.meetingLink || "Link not provided"
-                    : inviteEntry.location || "Venue not provided"}
-                </div>
-              </div>
-            </div>
-
-            <div className="ta-panel" style={{ marginTop: "1.25rem" }}>
-              <div className="ta-panel__header">
-                <Mail size={15} aria-hidden="true" /> Email preview
-              </div>
-              <div className="ta-email-preview">
-                <div className="ta-email-preview__subject">{invitationContent.subject}</div>
-                <pre className="ta-email-preview__body">{invitationContent.body}</pre>
-              </div>
-            </div>
-
-            {!invitationContent.email && (
-              <div className="notice notice--error" role="alert" style={{ marginTop: "1rem" }}>
-                <div className="notice__body">
-                  This candidate has no email address on file, so a draft cannot be opened. Copy the invitation and share it manually.
-                </div>
-              </div>
-            )}
-          </>
-        )}
       </Modal>
 
       <Modal

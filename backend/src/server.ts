@@ -7,8 +7,7 @@ import cookieParser from "cookie-parser";
 import fs from "node:fs";
 import path from "node:path";
 import { env } from "./config/env";
-import { prisma } from "./lib/prisma";
-import { globalRateLimiter, authRateLimiter } from "./middleware/rateLimit";
+import { prisma, ensureDatabaseTransport } from "./lib/prisma";
 import { errorHandler, notFoundHandler } from "./middleware/error";
 import { swaggerDocument } from "./docs/swagger";
 import swaggerUi from "swagger-ui-express";
@@ -36,10 +35,27 @@ import filesRoutes from "./modules/files";
 import publicRoutes from "./modules/public";
 
 import { startEmployeeInvitationReminderScheduler } from "./services/invitationReminderService";
+import { startOfferReminderScheduler } from "./services/offerReminderService";
 
 const app = express();
 
+// Prisma returns BIGINT columns (e.g. totpLastUsedStep) as native BigInt.
+// JSON.stringify throws on BigInt, so serialize them as decimal strings.
+app.set("json replacer", (_key: string, value: unknown) =>
+  typeof value === "bigint" ? value.toString() : value,
+);
+
 app.set("trust proxy", 1);
+
+if (env.isProd) {
+  app.use((req, res, next) => {
+    if (req.get("x-forwarded-proto")?.toLowerCase() === "http") {
+      return res.redirect(301, `https://${req.get("host")}${req.originalUrl}`);
+    }
+    next();
+  });
+}
+
 // CSP mirrors helmet defaults minus upgrade-insecure-requests so the built
 // portal also works when served over plain HTTP on a LAN (no TLS terminator).
 app.use(helmet({
@@ -126,20 +142,32 @@ if (distDir) {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(env.port, () => {
-  console.log(`[${env.appName}] backend listening on http://localhost:${env.port}`);
-  console.log(`[email] SMTP configured=${Boolean(env.smtpHost && env.smtpUser && env.smtpPass)} host=${env.smtpHost} user=${env.smtpUser}`);
-  startEmployeeInvitationReminderScheduler();
-  if (env.isDev && require("./integrations/email/email.service").emailSimulated()) {
-    console.log("[email] Emails will be simulated if transporter fails.");
-  }
+async function start() {
+  // Resolve the working database transport (tcp/ws/http) before serving traffic
+  // so the API keeps working on networks that block any single transport.
+  await ensureDatabaseTransport();
 
-  // Warm the connection pool immediately so the very first request is fast�
-  prisma.$queryRaw`SELECT 1`.catch((err) => console.error("[db] warm-up failed:", String(err?.message ?? err).split("\n")[0]));
-  // �and keep it warm. Neon suspends idle compute after ~5 minutes; a light
-  // ping every 4 minutes prevents costly cold starts for the next request.
-  const keepAlive = setInterval(() => {
-    prisma.$queryRaw`SELECT 1`.catch(() => undefined);
-  }, 4 * 60 * 1000);
-  keepAlive.unref();
+  app.listen(env.port, () => {
+    console.log(`[${env.appName}] backend listening on http://localhost:${env.port}`);
+    console.log(`[email] SMTP configured=${Boolean(env.smtpHost && env.smtpUser && env.smtpPass)} host=${env.smtpHost} user=${env.smtpUser}`);
+    startEmployeeInvitationReminderScheduler();
+    startOfferReminderScheduler();
+    if (env.isDev && require("./integrations/email/email.service").emailSimulated()) {
+      console.log("[email] Emails will be simulated if transporter fails.");
+    }
+
+    // Warm the connection pool immediately so the very first request is fast…
+    prisma.$queryRaw`SELECT 1`.catch((err) => console.error("[db] warm-up failed:", String(err?.message ?? err).split("\n")[0]));
+    // …and keep it warm. Neon suspends idle compute after ~5 minutes; a light
+    // ping every 4 minutes prevents costly cold starts for the next request.
+    const keepAlive = setInterval(() => {
+      prisma.$queryRaw`SELECT 1`.catch(() => undefined);
+    }, 4 * 60 * 1000);
+    keepAlive.unref();
+  });
+}
+
+start().catch((error) => {
+  console.error("[startup] failed:", error);
+  process.exitCode = 1;
 });

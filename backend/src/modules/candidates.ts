@@ -3,14 +3,13 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
-import { ok, created, paginated } from "../utils/http";
+import { ok, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
 import { authenticate, requireAuth, requireHr, requireCandidate, requirePermission } from "../middleware/auth";
 import { logAudit } from "../services/audit.service";
 import { cache } from "../services/cache.service";
 import { upload } from "../middleware/upload";
 import { storeFile, STORAGE_BUCKETS } from "../storage/index";
-import { env } from "../config/env";
 
 const router = express.Router();
 // Mounted at /api/v1/candidates in server.ts, so this only guards /candidates/*.
@@ -119,6 +118,30 @@ router.post(
   }),
 );
 
+const hrCandidateUpdateSchema = candSchema.partial().refine((value) => Object.keys(value).length > 0, "Provide at least one field to update.");
+
+router.patch(
+  "/:id",
+  requireAuth("HR"),
+  requireHr,
+  requirePermission("candidates.manage"),
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const parsed = hrCandidateUpdateSchema.safeParse(req.body);
+    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
+    const current = await prisma.candidate.findUnique({ where: { id } });
+    if (!current) throw ApiError.notFound("Candidate not found.");
+    if (parsed.data.email && parsed.data.email !== current.email) {
+      const exists = await prisma.candidate.findUnique({ where: { email: parsed.data.email } });
+      if (exists && exists.id !== id) throw ApiError.conflict("Email already in use.");
+    }
+    const item = await prisma.candidate.update({ where: { id }, data: parsed.data });
+    await cache.peopleChanged();
+    await logAudit(req, { action: "CANDIDATE_PROFILE_HR_UPDATE", entityType: "Candidate", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { changedFields: Object.keys(parsed.data) } });
+    return ok(res, { item });
+  }),
+);
+
 const skillSchema = z.object({ skillId: z.string().min(1).optional(), skillName: z.string().min(2).optional(), level: z.string().optional() });
 
 router.post(
@@ -168,7 +191,7 @@ router.get(
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const item = await prisma.candidate.findUnique({
       where: { id },
-      include: { skills: { include: { skill: true } }, education: true, employmentHistory: true, certifications: true, cvFile: true, cvVersions: { include: { file: true, uploadedBy: true } }, applications: { include: { jobOpening: true }, orderBy: { appliedAt: "desc" } } },
+      include: { skills: { include: { skill: true } }, education: true, employmentHistory: true, certifications: true, cvFile: true, cvVersions: { include: { file: true, uploadedBy: { select: { id: true, name: true, email: true } } } }, applications: { include: { jobOpening: true }, orderBy: { appliedAt: "desc" } } },
     });
     if (!item) throw ApiError.notFound("Candidate not found.");
     return ok(res, { item });

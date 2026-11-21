@@ -1,35 +1,30 @@
-import { useEffect, useMemo, useState, type ReactNode, type FormEvent } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Briefcase,
-  CalendarPlus,
-  ClipboardCheck,
   Download,
   Eye,
   FileSearch,
-  MessageSquarePlus,
-  MoveRight,
-  PauseCircle,
-  PlayCircle,
   RefreshCw,
   SlidersHorizontal,
   X,
   Search,
-  XCircle,
 } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import { useDebounced } from "../../hooks/useDebounced";
-import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
+import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
 import DataTable, { type Column } from "../../components/DataTable";
 import PageHeader from "../../components/ref/PageHeader";
 import Button from "../../components/ref/Button";
 import Badge from "../../components/ref/Badge";
 import Modal from "../../components/ref/Modal";
 import CandidateStatusBadge from "../../components/ref/CandidateStatusBadge";
-import CandidateAdditionalInfo from "../../components/ref/CandidateAdditionalInfo";
 import EmptyState from "../../components/ref/EmptyState";
 import { Select } from "../../components/ref/Input";
 import { formatDate, formatDateTime, initials } from "./databank/shared";
+import { APPLICATION_STATUS_LABELS, APPLICATION_TRANSITIONS } from "../../lib/applicationTransitions";
+
+const NEW_APPLICATION_STATUS = "APPLIED";
 
 const LABELS: Array<{ value: string; label: string }> = [
   { value: "APPLIED", label: "Applied" }, { value: "UNDER_REVIEW", label: "Under Review" },
@@ -44,7 +39,7 @@ const LABELS: Array<{ value: string; label: string }> = [
 
 export default function Submissions({
   title = "Candidate Applications",
-  subtitle = "All applications received from the Career Portal. Search, filter and progress the candidates that match an open position.",
+  subtitle = "Newly applied candidates from the Career Portal. Once HR progresses a candidate, the application leaves this list and moves to its next stage.",
   initialStatus = "",
   lockedStatus = false,
 }: {
@@ -53,29 +48,22 @@ export default function Submissions({
   initialStatus?: string;
   lockedStatus?: boolean;
 } = {}) {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
   const [jobOpeningId, setJobOpeningId] = useState(() => searchParams.get("jobOpeningId") || "");
-  const [status, setStatus] = useState(() => initialStatus || searchParams.get("status") || "");
+  const [status, setStatus] = useState(() => lockedStatus ? (initialStatus || searchParams.get("status") || "") : NEW_APPLICATION_STATUS);
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("dateFrom") || "");
   const [dateTo, setDateTo] = useState(() => searchParams.get("dateTo") || "");
   const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   const [detail, setDetail] = useState<any>(null);
-  const [rejecting, setRejecting] = useState<any>(null);
-  const [remarking, setRemarking] = useState<any>(null);
-  const [remark, setRemark] = useState("");
-  const [screening, setScreening] = useState<any>(null);
-  const [busy, setBusy] = useState(false);
   const [cv, setCv] = useState<{ url: string; name: string; downloadUrl?: string } | null>(null);
   const [cvBusy, setCvBusy] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [busyStatus, setBusyStatus] = useState<string | null>(null);
 
   const debouncedSearch = useDebounced(search);
-  const invalidate = useInvalidate();
   const effectiveStatus = lockedStatus ? initialStatus : status;
 
   useEffect(() => {
@@ -112,10 +100,6 @@ export default function Submissions({
     () => hrApi.openings({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
   );
 
-  const refresh = () => {
-    invalidate(["applications", "dashboard"]);
-  };
-
   const openDetail = async (row: any) => {
     setDetailLoading(true);
     setDetail(row);
@@ -130,10 +114,31 @@ export default function Submissions({
     }
   };
 
+  const changeStatus = async (status: string) => {
+    if (!detail) return;
+    const label = APPLICATION_STATUS_LABELS[status] ?? status.replace(/_/g, " ");
+    if (["HIRED", "WITHDRAWN"].includes(status) && !window.confirm(`${label} this application? This cannot be undone.`)) return;
+    const remarks = status === "REJECTED"
+      ? window.prompt("Reason for rejection:", "Rejected by HR")
+      : `Moved to ${label} by HR`;
+    if (remarks === null) return;
+    setBusyStatus(status);
+    setError("");
+    try {
+      await hrApi.applicationStatus(detail.id, { status, remarks });
+      setDetail((current: any) => (current ? { ...current, status } : current));
+      await refetch();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not change the application status.");
+    } finally {
+      setBusyStatus(null);
+    }
+  };
+
   const activeChips = [
     debouncedSearch ? { key: "search", label: `Search: ${debouncedSearch}`, clear: () => setSearch("") } : null,
     jobOpeningId ? { key: "jobOpeningId", label: `Position: ${openings.find((o: any) => o.id === jobOpeningId)?.title || "Selected"}`, clear: () => setJobOpeningId("") } : null,
-    effectiveStatus ? { key: "status", label: `Status: ${LABELS.find((o) => o.value === effectiveStatus)?.label || effectiveStatus}`, clear: () => setStatus("") } : null,
+    lockedStatus && effectiveStatus ? { key: "status", label: `Status: ${LABELS.find((o) => o.value === effectiveStatus)?.label || effectiveStatus}`, clear: () => setStatus("") } : null,
     dateFrom ? { key: "dateFrom", label: `From: ${dateFrom}`, clear: () => setDateFrom("") } : null,
     dateTo ? { key: "dateTo", label: `To: ${dateTo}`, clear: () => setDateTo("") } : null,
   ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
@@ -144,43 +149,6 @@ export default function Submissions({
     setStatus("");
     setDateFrom("");
     setDateTo("");
-  };
-
-  const changeStatus = async (applicationId: string, next: string, remarks?: string) => {
-    setNotice("");
-    setError("");
-    try {
-      await hrApi.applicationStatus(applicationId, { status: next, remarks });
-      setNotice(`Application marked as ${LABELS.find((o) => o.value === next)?.label ?? next}.`);
-      if (["UNDER_REVIEW", "AI_RECOMMENDED"].includes(next)) navigate(`/hr/ai-screening?application=${applicationId}`);
-      else if (next === "SHORTLISTED") navigate("/hr/shortlisting");
-      else if (next === "SELECTED") navigate("/hr/final-selection");
-      else if (next === "INTERVIEW_SCHEDULED") navigate("/hr/interviews");
-      else refresh();
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Status change failed.");
-    } finally {
-      setScreening(null);
-      setRejecting(null);
-      setBusy(false);
-    }
-  };
-
-  const addRemark = async () => {
-    if (!remarking || !remark.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      await hrApi.applicationRemarks(remarking.id, { body: remark.trim() });
-      setNotice("HR remark recorded.");
-      setRemarking(null);
-      setRemark("");
-      refresh();
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not record the remark.");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const openResume = async (fileId?: string) => {
@@ -224,21 +192,14 @@ export default function Submissions({
     { key: "phone", header: "Phone", className: "col-phone", render: (a) => <span className="cell-nowrap">{a.candidate?.mobile || "—"}</span> },
     { key: "position", header: "Position", className: "col-position", render: (a) => <div className="cell-stack"><strong>{a.jobOpening?.title}</strong><span className="cell-muted">{a.jobOpening?.department?.name || "—"}</span></div> },
     { key: "experience", header: "Exp.", className: "col-compact", render: (a) => <span className="cell-nowrap">{a.candidate?.totalExperience != null ? `${a.candidate.totalExperience} yrs` : "—"}</span> },
-    { key: "location", header: "Location", className: "col-location", render: (a) => <span className="cell-ellipsis" title={a.candidate?.currentLocation}>{a.candidate?.currentLocation || "—"}</span> },
-    { key: "qualification", header: "Qualification", className: "col-qualification", render: (a) => <span className="cell-ellipsis" title={a.candidate?.qualification}>{a.candidate?.qualification || "—"}</span> },
     { key: "status", header: "Status", className: "col-status", render: (a) => <CandidateStatusBadge status={a.status} /> },
-    { key: "ai", header: "AI Score", className: "col-compact", render: (a) => a.aiMatchScore != null ? <span className="cell-strong">{Math.round(a.aiMatchScore)}%</span> : <span className="cell-muted">—</span> },
     {
       key: "actions",
       header: "Actions",
       className: "text-right col-actions",
       render: (a) => (
         <div className="cell-actions cell-actions--nowrap">
-          <button type="button" className="btn btn--ghost btn--icon" title="View all details" aria-label="View all details" onClick={() => void openDetail(a)}><Eye size={16} /></button>
-          {a.resumeFileId && <button type="button" className="btn btn--ghost btn--icon" title="Preview CV" aria-label="Preview CV" onClick={() => void openResume(a.resumeFileId)} disabled={cvBusy}><FileSearch size={16} /></button>}
-          {a.status === "APPLIED" && <button type="button" className="btn btn--ghost btn--icon" title="Move to screening" aria-label="Move to screening" onClick={() => setScreening(a)}><MoveRight size={16} /></button>}
-          <button type="button" className="btn btn--ghost btn--icon" title="Add HR remark" aria-label="Add remark" onClick={() => { setRemarking(a); setRemark(""); }}><MessageSquarePlus size={16} /></button>
-          <button type="button" className="btn btn--danger-ghost btn--icon" title="Reject application" aria-label="Reject application" onClick={() => setRejecting(a)}><XCircle size={16} /></button>
+          <button type="button" className="btn btn--ghost btn--icon" title="View application details" aria-label={`View application details of ${a.candidate?.fullName}`} onClick={() => void openDetail(a)}><Eye size={16} /></button>
         </div>
       ),
     },
@@ -253,7 +214,6 @@ export default function Submissions({
         actions={<Button variant="outline" icon={RefreshCw} onClick={() => void refetch()}>Refresh data</Button>}
       />
 
-      {notice && <div className="notice notice--success" role="status"><div className="notice__body">{notice}</div></div>}
       {error && <div className="notice notice--error" role="alert"><div className="notice__body">{error}</div></div>}
 
       <section className="ta-applications-toolbar" aria-label="Application filters">
@@ -273,7 +233,7 @@ export default function Submissions({
             <label className="ta-position-filter__label" htmlFor="applications-position"><Briefcase size={15} aria-hidden="true" /> Position</label>
             <Select id="applications-position" aria-label="Filter by position" value={jobOpeningId} onChange={(event) => setJobOpeningId(event.target.value)} placeholder="All Positions" options={openings.map((o: any) => ({ value: o.id, label: o.title }))} />
           </div>
-          {!lockedStatus && <Select aria-label="Filter by application status" value={status} onChange={(event) => setStatus(event.target.value)} placeholder="All statuses" options={LABELS} />}
+          {!lockedStatus && <span className="filters-summary">New applications only</span>}
           <label className="ta-inline-field"><span className="ta-inline-field__label">From</span><input type="date" className="input" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Applications from date" /></label>
           <label className="ta-inline-field"><span className="ta-inline-field__label">To</span><input type="date" className="input" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Applications to date" /></label>
         </div>
@@ -308,12 +268,7 @@ export default function Submissions({
         mobileTitle={(row) => row.candidate?.fullName}
         mobileMeta={(row) => <>{row.applicationCode} · {row.jobOpening?.title}<br />{row.candidate?.email} · {row.candidate?.mobile || "—"}</>}
         mobileActions={(row) => (
-          <>
-            <Button size="sm" variant="outline" icon={Eye} onClick={() => void openDetail(row)}>Details</Button>
-            {row.resumeFileId && <Button size="sm" variant="outline" icon={FileSearch} onClick={() => void openResume(row.resumeFileId)}>CV</Button>}
-            {row.status === "APPLIED" && <Button size="sm" variant="outline" onClick={() => setScreening(row)}>Screen</Button>}
-            {row.status !== "REJECTED" && <Button size="sm" variant="outline" icon={XCircle} onClick={() => setRejecting(row)}>Reject</Button>}
-          </>
+          <Button size="sm" variant="outline" icon={Eye} onClick={() => void openDetail(row)}>Details</Button>
         )}
         footer={<><span>Showing <strong>{from}</strong>–<strong>{to}</strong> of <strong>{pagination.total}</strong> application{pagination.total === 1 ? "" : "s"}</span><span className="cell-muted">Applied date · newest first</span><div className="ta-pagination"><button type="button" className="btn btn--outline btn--sm" onClick={() => setPage(Math.max(1, page - 1))} disabled={pagination.page <= 1}>Previous</button><span className="ta-pagination__status">Page {pagination.page} of {pagination.totalPages}</span><button type="button" className="btn btn--outline btn--sm" onClick={() => setPage(Math.min(pagination.totalPages, page + 1))} disabled={pagination.page >= pagination.totalPages}>Next</button></div></>}
       />
@@ -325,14 +280,7 @@ export default function Submissions({
         title="Application details"
         subtitle={detail ? `${detail.candidate?.fullName} · ${detail.applicationCode}` : undefined}
         size="xl"
-        footer={detail ? (
-          <>
-            <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
-            {detail.status === "APPLIED" && <Button onClick={() => { setDetail(null); setScreening(detail); }} icon={MoveRight}>Move to Screening</Button>}
-            {["UNDER_REVIEW", "AI_RECOMMENDED"].includes(detail.status) && <Button variant="secondary" onClick={() => navigate(`/hr/ai-screening?application=${detail.id}`)} icon={ClipboardCheck}>Open AI Screening</Button>}
-            {detail.status !== "REJECTED" && <Button variant="danger-ghost" icon={XCircle} onClick={() => { setDetail(null); setRejecting(detail); }}>Reject</Button>}
-          </>
-        ) : undefined}
+        footer={detail ? <Button variant="outline" onClick={() => setDetail(null)}>Close</Button> : undefined}
       >
         {detail && (
           <div className="space-y-4">
@@ -350,38 +298,40 @@ export default function Submissions({
               <div className="detail-item"><div className="detail-item__label">Application ID</div><div className="detail-item__value">{detail.applicationCode}</div></div>
               <div className="detail-item"><div className="detail-item__label">Email</div><div className="detail-item__value">{detail.candidate?.email || "—"}</div></div>
               <div className="detail-item"><div className="detail-item__label">Phone</div><div className="detail-item__value">{detail.candidate?.mobile || "—"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">Location</div><div className="detail-item__value">{detail.candidate?.currentLocation || "—"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">Current designation</div><div className="detail-item__value">{detail.candidate?.currentDesignation || "—"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">Current organization</div><div className="detail-item__value">{detail.candidate?.currentOrganization || "—"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">Qualification</div><div className="detail-item__value">{detail.candidate?.qualification || "—"}{detail.candidate?.graduationYear ? ` · ${detail.candidate.graduationYear}` : ""}</div></div>
-              <div className="detail-item"><div className="detail-item__label">Specialization</div><div className="detail-item__value">{detail.candidate?.specialization || "—"}</div></div>
               <div className="detail-item"><div className="detail-item__label">Total experience</div><div className="detail-item__value">{detail.candidate?.totalExperience ?? "—"} yrs</div></div>
-              <div className="detail-item"><div className="detail-item__label">Relevant experience</div><div className="detail-item__value">{detail.candidate?.relevantExperience ?? "—"} yrs</div></div>
               <div className="detail-item"><div className="detail-item__label">Source</div><div className="detail-item__value">{detail.source || "Career Portal"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">LinkedIn</div><div className="detail-item__value">{detail.candidate?.linkedin ? <a className="ta-link" href={detail.candidate.linkedin} target="_blank" rel="noreferrer">{detail.candidate.linkedin}</a> : "—"}</div></div>
-              <div className="detail-item"><div className="detail-item__label">AI match score</div><div className="detail-item__value">{detail.aiMatchScore != null ? `${Math.round(detail.aiMatchScore)}%` : "—"}</div></div>
               <div className="detail-item"><div className="detail-item__label">Application status</div><div className="detail-item__value"><CandidateStatusBadge status={detail.status} /></div></div>
               {detail.hrRemarks && <div className="detail-item" style={{ gridColumn: "1 / -1" }}><div className="detail-item__label">HR Remarks</div><div className="detail-item__value">{detail.hrRemarks}</div></div>}
             </div>
+            <div className="detail-section">
+              <h4 className="detail-section__title">Application actions</h4>
+              <p className="detail-item__value detail-item__value--muted" style={{ marginBottom: "0.5rem" }}>
+                Move this application to the next recruitment stage.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(APPLICATION_TRANSITIONS[detail.status] ?? []).map((status) => (
+                  <Button
+                    key={status}
+                    size="sm"
+                    variant={status === "REJECTED" ? "danger-ghost" : status === "WITHDRAWN" ? "ghost" : "outline"}
+                    onClick={() => void changeStatus(status)}
+                    disabled={Boolean(busyStatus)}
+                    loading={busyStatus === status}
+                  >
+                    {APPLICATION_STATUS_LABELS[status] ?? status.replace(/_/g, " ")}
+                  </Button>
+                ))}
+                {(APPLICATION_TRANSITIONS[detail.status] ?? []).length === 0 && (
+                  <span className="cell-muted">No further transitions are available from this stage.</span>
+                )}
+                <Link className="btn btn--ghost btn--sm" to={`/hr/submissions/${detail.id}`}>Open full profile</Link>
+              </div>
+            </div>
             {detailLoading && <div className="notice notice--info"><div className="notice__body">Refreshing the full candidate record…</div></div>}
-            <CandidateAdditionalInfo value={detail?.candidate?.additionalInfo} />
             {detail.candidate?.skills?.length > 0 && (
               <div className="detail-section">
                 <h4 className="detail-section__title">Skills</h4>
                 <div className="flex flex-wrap gap-2">{detail.candidate.skills.map((record: any) => <Badge key={record.id} variant="blue">{record.skill?.name || "Skill"}{record.level ? ` · ${record.level}` : ""}</Badge>)}</div>
-              </div>
-            )}
-            {detail.candidate?.education?.length > 0 && (
-              <div className="detail-section">
-                <h4 className="detail-section__title">Education</h4>
-                <div className="detail-grid detail-grid--3">
-                  {detail.candidate.education.map((record: any) => (
-                    <div className="detail-item" key={record.id}>
-                      <div className="detail-item__label">{record.degree}</div>
-                      <div className="detail-item__value">{record.institution || "—"}{record.field ? ` · ${record.field}` : ""}{record.endYear ? ` · ${record.endYear}` : ""}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
             {detail.candidate?.employmentHistory?.length > 0 && (
@@ -457,36 +407,6 @@ export default function Submissions({
             )}
           </div>
         )}
-      </Modal>
-
-      <Modal
-        open={Boolean(screening)}
-        onClose={() => (busy ? undefined : setScreening(null))}
-        title="Move to screening"
-        size="sm"
-        footer={<><Button variant="outline" onClick={() => setScreening(null)} disabled={busy}>Cancel</Button><Button icon={MoveRight} onClick={() => { setBusy(true); void changeStatus(screening.id, "UNDER_REVIEW", "Moved to CV screening by HR."); }} loading={busy}>Move to screening</Button></>}
-      >
-        <p>{screening ? `${screening.candidate?.fullName} will be moved to CV screening.` : "The application will be moved."}</p>
-      </Modal>
-
-      <Modal
-        open={Boolean(remarking)}
-        onClose={() => setRemarking(null)}
-        title="Add HR remark"
-        size="sm"
-        footer={<><Button variant="outline" onClick={() => setRemarking(null)} disabled={busy}>Cancel</Button><Button icon={MessageSquarePlus} onClick={addRemark} loading={busy} disabled={!remark.trim()}>Save remark</Button></>}
-      >
-        <textarea className="textarea" rows={4} value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Remark shared with the recruitment team…" />
-      </Modal>
-
-      <Modal
-        open={Boolean(rejecting)}
-        onClose={() => (busy ? undefined : setRejecting(null))}
-        title="Reject application"
-        size="sm"
-        footer={<><Button variant="outline" onClick={() => setRejecting(null)} disabled={busy}>Keep application</Button><Button variant="danger" icon={XCircle} onClick={() => { setBusy(true); void changeStatus(rejecting.id, "REJECTED", "Rejected by HR"); }} loading={busy}>Reject application</Button></>}
-      >
-        <p>{rejecting ? `${rejecting.candidate?.fullName}'s application will be marked as rejected.` : "The application will be rejected."}</p>
       </Modal>
 
       <Modal

@@ -6,7 +6,7 @@ import { ApiError } from "../utils/ApiError";
 import { ok, created, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
 import { authenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
-import { randomToken, hashSecret, sha256 } from "../utils/crypto";
+import { randomToken, sha256 } from "../utils/crypto";
 import { cvUpload } from "../middleware/upload";
 import { storeFile, STORAGE_BUCKETS } from "../storage/index";
 import { logAudit } from "../services/audit.service";
@@ -17,6 +17,15 @@ import { env } from "../config/env";
 
 const router = express.Router();
 router.use(authenticate, requireAuth("HR"), requireHr);
+
+/** True once HR has validated the employee's submitted profile — the record is then frozen. */
+async function hasValidatedSubmission(employeeId: string): Promise<boolean> {
+  const validated = await prisma.employeeUpdateInvitation.findFirst({
+    where: { employeeId, OR: [{ submissionStatus: "VALIDATED" }, { status: "VALIDATED" }] },
+    select: { id: true },
+  });
+  return Boolean(validated);
+}
 
 const empSchema = z.object({
   employeeCode: z.string().min(2).max(30),
@@ -116,10 +125,40 @@ router.get(
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const item = await prisma.employee.findUnique({
       where: { id },
-      include: { department: true, designation: true, employmentType: true, skills: { include: { skill: true } }, education: true, employmentHistory: true, certifications: true, cvVersions: { include: { file: true, uploadedBy: true } }, departmentHistory: { include: { fromDepartment: true, toDepartment: true, changedBy: true } } },
+      include: {
+        department: true,
+        designation: true,
+        employmentType: true,
+        skills: { include: { skill: true } },
+        education: true,
+        employmentHistory: true,
+        certifications: true,
+        cvVersions: { include: { file: true, uploadedBy: { select: { id: true, name: true, email: true } } } },
+        departmentHistory: { include: { fromDepartment: true, toDepartment: true, changedBy: { select: { id: true, name: true, email: true } } } },
+      },
     });
     if (!item) throw ApiError.notFound("Employee not found.");
-    return ok(res, { item });
+    // Documents uploaded during onboarding stay linked to the HIRED application for this
+    // candidate — expose them here (ordered 10th, +2, graduation, ...) so HR can review
+    // everything from the employee record.
+    const candidate = await prisma.candidate.findUnique({ where: { email: item.officialEmail }, select: { id: true } });
+    let documents: any[] = [];
+    if (candidate) {
+      const hired = await prisma.application.findFirst({
+        where: { candidateId: candidate.id, status: "HIRED" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+      });
+      if (hired) {
+        documents = await prisma.candidateDocument.findMany({
+          where: { applicationId: hired.id },
+          include: { category: true, file: true },
+        });
+        documents.sort((a: any, b: any) => (a.category?.sortOrder ?? 999) - (b.category?.sortOrder ?? 999));
+      }
+    }
+    const locked = await hasValidatedSubmission(id);
+    return ok(res, { item: { ...item, documents, locked } });
   }),
 );
 
@@ -164,6 +203,9 @@ router.patch(
     if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
     const item = await prisma.employee.findUnique({ where: { id } });
     if (!item) throw ApiError.notFound("Employee not found.");
+    if (await hasValidatedSubmission(id)) {
+      throw ApiError.conflict("This employee record was confirmed from the employee's submitted data and can no longer be edited. Use the transfer action for department changes.");
+    }
     if (parsed.data.employeeCode && parsed.data.employeeCode !== item.employeeCode && await prisma.employee.findUnique({ where: { employeeCode: parsed.data.employeeCode } })) throw ApiError.conflict("Employee code already exists.");
     if (parsed.data.officialEmail && parsed.data.officialEmail !== item.officialEmail && await prisma.employee.findUnique({ where: { officialEmail: parsed.data.officialEmail } })) throw ApiError.conflict("Official email already exists.");
     const data = empUpdateData(parsed.data);
@@ -201,7 +243,7 @@ router.post(
     if (!toDept) throw ApiError.notFound("Target department not found.");
     const history = await prisma.employeeDepartmentHistory.create({
       data: { employeeId: id, fromDepartmentId: employee.departmentId, toDepartmentId, reason, changedById: req.auth!.subjectId },
-      include: { fromDepartment: true, toDepartment: true, changedBy: true },
+      include: { fromDepartment: true, toDepartment: true, changedBy: { select: { id: true, name: true, email: true } } },
     });
     const updated = await prisma.employee.update({ where: { id }, data: { departmentId: toDepartmentId } });
     await cache.peopleChanged();
@@ -216,7 +258,7 @@ router.get(
   requirePermission("employees.manage"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
-    const invitations = await prisma.employeeUpdateInvitation.findMany({ where: { employeeId: id }, orderBy: { createdAt: "desc" }, include: { createdBy: true } });
+    const invitations = await prisma.employeeUpdateInvitation.findMany({ where: { employeeId: id }, orderBy: { createdAt: "desc" }, include: { createdBy: { select: { id: true, name: true, email: true } } } });
     return ok(res, { invitations });
   }),
 );
@@ -231,7 +273,6 @@ router.post(
     const existing = await prisma.employeeUpdateInvitation.findFirst({ where: { employeeId: id, usedAt: null }, orderBy: { createdAt: "desc" } });
     if (existing) throw ApiError.conflict("An active invitation already exists.");
     const token = randomToken();
-    const expiresAt: Date | null = null;
     const invitation = await prisma.employeeUpdateInvitation.create({ data: { employeeId: id, tokenHash: sha256(token), createdById: req.auth!.subjectId } });
     const link = `${env.appUrl}/employee/update?token=${token}`;
     void sendTemplateEmail({
@@ -280,7 +321,6 @@ router.post(
           continue;
         }
         const token = randomToken();
-        const expiresAt: Date | null = null;
         const invitation = await prisma.employeeUpdateInvitation.create({
           data: { employeeId: employee.id, tokenHash: sha256(token), createdById: req.auth!.subjectId },
         });
@@ -358,6 +398,16 @@ router.post(
   requirePermission("employees.manage"),
   asyncHandler(async (req, res) => {
     const { applicationId } = z.object({ applicationId: z.string().min(1) }).parse(req.params);
+    const correction = z.object({
+      correctionEmail: z.string().email().optional().nullable(),
+      overrides: z.object({
+        fullName: z.string().min(2).max(120).optional(),
+        officialEmail: z.string().email().optional(),
+        mobile: z.string().optional(),
+      }).optional(),
+    }).safeParse(req.body);
+    const correctionEmail = correction.success ? correction.data.correctionEmail ?? undefined : undefined;
+    const overrides = correction.success ? correction.data.overrides ?? undefined : undefined;
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       include: {
@@ -372,8 +422,31 @@ router.post(
       throw ApiError.badRequest("Only selected candidates (or those in onboarding) can be moved to existing employees.");
     }
     const candidate = application.candidate;
-    const duplicate = await prisma.employee.findUnique({ where: { officialEmail: candidate.email } });
-    if (duplicate) throw ApiError.conflict(`An employee with email ${candidate.email} already exists.`);
+    const effectiveEmail = overrides?.officialEmail ?? candidate.email;
+    const effectiveName = overrides?.fullName ?? candidate.fullName;
+    const effectiveMobile = overrides?.mobile ?? candidate.mobile;
+    if (correctionEmail && !candidate.email) throw ApiError.badRequest("The candidate does not have an email address to correct.");
+    const duplicate = await prisma.employee.findUnique({ where: { officialEmail: effectiveEmail } });
+    if (correctionEmail && !duplicate) throw ApiError.badRequest("A correction link can only be sent when an employee already exists with this email address.");
+    if (duplicate) {
+      if (correctionEmail) {
+        const emailOwner = await prisma.employee.findUnique({ where: { officialEmail: correctionEmail } });
+        if (emailOwner && emailOwner.id !== duplicate.id) throw ApiError.conflict("That email is already used by another employee.");
+        const token = randomToken();
+        await prisma.employeeUpdateInvitation.create({
+          data: { employeeId: duplicate.id, tokenHash: sha256(token), createdById: req.auth!.subjectId },
+        });
+        void sendTemplateEmail({
+          to: correctionEmail,
+          templateKey: "employee_update_invitation",
+          data: { name: duplicate.fullName, employeeCode: duplicate.employeeCode, email: correctionEmail, link: `${env.appUrl}/employee/update?token=${token}`, expiresAt: null },
+          metadata: { employeeId: duplicate.id, applicationId: application.id },
+        });
+        await logAudit(req, { action: "EMPLOYEE_CORRECTION_INVITE", entityType: "Employee", entityId: duplicate.id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { applicationId: application.id, correctionEmail } });
+        return ok(res, { item: duplicate, duplicate: true, correctionSent: true, message: `Correction link sent to ${correctionEmail}. After the candidate submits and HR validates the update, add the candidate to Existing Employees again.` });
+      }
+      return ok(res, { item: duplicate, duplicate: true, message: `An employee already exists with email ${candidate.email}. Use Edit details to send the candidate a correction link.` });
+    }
 
     // Reuse the offer's department / designation / employment type / joining date when present.
     const departmentId = application.offer?.departmentId ?? application.jobOpening?.departmentId ?? undefined;
@@ -397,10 +470,10 @@ router.post(
     const employee = await prisma.employee.create({
       data: {
         employeeCode,
-        fullName: candidate.fullName,
-        officialEmail: candidate.email,
+        fullName: effectiveName,
+        officialEmail: effectiveEmail,
         personalEmail: candidate.email,
-        mobile: candidate.mobile,
+        mobile: effectiveMobile,
         departmentId,
         designationId,
         employmentTypeId: application.offer?.employmentTypeId ?? undefined,
@@ -418,9 +491,11 @@ router.post(
       include: { department: true, designation: true, employmentType: true },
     });
 
-    for (const ed of candidate.education) {
-      await prisma.educationRecord.create({
-        data: {
+    // Copy education and skills in two bulk statements rather than one query per
+    // record (an applicant can have dozens of each).
+    if (candidate.education.length) {
+      await prisma.educationRecord.createMany({
+        data: candidate.education.map((ed) => ({
           employeeId: employee.id,
           degree: ed.degree,
           institution: ed.institution,
@@ -428,11 +503,14 @@ router.post(
           startYear: ed.startYear,
           endYear: ed.endYear,
           grade: ed.grade,
-        },
+        })),
       }).catch(() => undefined);
     }
-    for (const cs of candidate.skills) {
-      await prisma.employeeSkill.create({ data: { employeeId: employee.id, skillId: cs.skillId } }).catch(() => undefined);
+    if (candidate.skills.length) {
+      await prisma.employeeSkill.createMany({
+        data: candidate.skills.map((cs) => ({ employeeId: employee.id, skillId: cs.skillId })),
+        skipDuplicates: true,
+      }).catch(() => undefined);
     }
     if (candidate.cvFileId) {
       await prisma.cvVersion.create({
@@ -440,9 +518,19 @@ router.post(
       }).catch(() => undefined);
     }
 
+    if (overrides && (overrides.fullName || overrides.officialEmail || overrides.mobile)) {
+      await prisma.candidate.update({
+        where: { id: candidate.id },
+        data: {
+          ...(overrides.fullName ? { fullName: overrides.fullName } : {}),
+          ...(overrides.officialEmail ? { email: overrides.officialEmail } : {}),
+          ...(overrides.mobile ? { mobile: overrides.mobile } : {}),
+        },
+      }).catch(() => undefined);
+    }
     await prisma.application.update({ where: { id: application.id }, data: { status: "HIRED" } });
     await prisma.applicationStatusHistory.create({
-      data: { applicationId: application.id, fromStatus: application.status, toStatus: "HIRED", changedById: req.auth!.subjectId, remarks: "Onboarding completed — added to Existing Employees" },
+      data: { applicationId: application.id, fromStatus: application.status, toStatus: "HIRED", changedById: req.auth!.subjectId, remarks: overrides ? "Onboarding completed — HR corrected candidate details before adding to Existing Employees" : "Onboarding completed — added to Existing Employees" },
     });
     await cache.peopleChanged();
     await cache.offersChanged();

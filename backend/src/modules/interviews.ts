@@ -12,7 +12,7 @@ import { notifyHrTeam, notifyCandidate } from "../services/notification.service"
 import { sendTemplateEmail } from "../integrations/email/email.service";
 import { env } from "../config/env";
 import { APPLICATION_STATUS, APPLICATION_TRANSITIONS, APPLICATION_STATUS_LABELS } from "../config/constants";
-import { INTERVIEW_STATUS, INTERVIEW_RESULT, INTERVIEW_MODES } from "../config/constants";
+import { INTERVIEW_STATUS, INTERVIEW_RESULT } from "../config/constants";
 
 const router = express.Router();
 router.use(authenticate, requireAuth("HR"), requireHr);
@@ -66,6 +66,7 @@ router.get(
     const where: any = {};
     if (req.query.status) where.status = String(req.query.status);
     if (req.query.applicationId) where.applicationId = String(req.query.applicationId);
+    if (req.query.jobOpeningId) where.application = { jobOpeningId: String(req.query.jobOpeningId) };
     if (req.query.interviewerEmail) where.interviewerEmail = { contains: String(req.query.interviewerEmail), mode: "insensitive" };
     if (search) where.OR = [{ interviewerName: { contains: search, mode: "insensitive" } }];
     const [items, total] = await Promise.all([
@@ -115,6 +116,7 @@ router.post(
     });
     await prisma.application.update({ where: { id: applicationId }, data: { status: APPLICATION_STATUS.INTERVIEW_SCHEDULED } });
     await prisma.applicationStatusHistory.create({ data: { applicationId, fromStatus: app.status, toStatus: APPLICATION_STATUS.INTERVIEW_SCHEDULED, changedById: req.auth!.subjectId, remarks: "Interview scheduled" } });
+    await cache.applicationsChanged();
     const emailData = { name: app.candidate.fullName, jobTitle: app.jobOpening.title, round: rest.round, scheduledAt: scheduledAt.toISOString(), timezone: rest.timezone, mode: rest.mode, location: rest.location, meetingLink: rest.meetingLink, interviewerName, interviewType, instructions: rest.instructions, appUrl: env.appUrl };
     void sendTemplateEmail({ to: app.candidate.email, templateKey: "interview_scheduled", data: emailData, metadata: { interviewId: interview.id, applicationId, interviewType } });
     const interviewerEmails = await sendInterviewerTemplateEmails(
@@ -207,7 +209,7 @@ router.post(
   }),
 );
 
-const feedbackSchema = z.object({ interviewerName: z.string().optional(), score: z.coerce.number().min(0).max(100).optional().nullable(), feedback: z.string().optional().nullable(), recommendation: z.string().optional().nullable() });
+const feedbackSchema = z.object({ interviewerName: z.string().optional(), score: z.coerce.number().min(0).max(100).optional().nullable(), feedback: z.string().optional().nullable(), recommendation: z.string().optional().nullable(), result: z.string().optional().nullable() });
 
 router.post(
   "/:id/feedback",
@@ -246,7 +248,6 @@ router.post(
     const { result, remarks, nextRound, nextScheduledAt, nextInterviewers } = parsed.data;
     const interview = await prisma.interview.findUnique({ where: { id }, include: { application: { include: { candidate: true, jobOpening: true } } } });
     if (!interview) throw ApiError.notFound("Interview not found.");
-    await prisma.interview.update({ where: { id }, data: { status: INTERVIEW_STATUS.COMPLETED, result } });
     let targetStatus: typeof APPLICATION_STATUS[keyof typeof APPLICATION_STATUS];
     switch (result) {
       case INTERVIEW_RESULT.SELECTED: targetStatus = APPLICATION_STATUS.SELECTED; break;
@@ -257,6 +258,9 @@ router.post(
     }
     const allowed = APPLICATION_TRANSITIONS[interview.application.status] ?? [];
     if (!allowed.includes(targetStatus)) throw ApiError.badRequest(`Cannot move application from ${interview.application.status} to ${targetStatus}.`);
+    // Validate the transition before writing anything so an invalid result can
+    // never leave the interview marked COMPLETED without the application moving.
+    await prisma.interview.update({ where: { id }, data: { status: INTERVIEW_STATUS.COMPLETED, result } });
     const updated = await prisma.application.update({ where: { id: interview.applicationId }, data: { status: targetStatus, ...(remarks !== undefined ? { hrRemarks: remarks } : {}) } });
     await prisma.applicationStatusHistory.create({ data: { applicationId: interview.applicationId, fromStatus: interview.application.status, toStatus: targetStatus, changedById: req.auth!.subjectId, remarks } });
     // Moving the candidate forward schedules the following round automatically.

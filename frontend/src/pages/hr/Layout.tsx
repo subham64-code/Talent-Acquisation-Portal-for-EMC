@@ -1,7 +1,17 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../../components/Sidebar";
 import TopNav from "../../components/TopNav";
+
+/** Keeps the shell (sidebar + top bar) on screen while the next page chunk loads. */
+function ContentFallback() {
+  return (
+    <div className="p-6" role="status" aria-live="polite">
+      <div className="h-4 w-40 rounded bg-black/10 animate-pulse" />
+      <div className="mt-4 h-24 rounded-lg bg-black/5 animate-pulse" />
+    </div>
+  );
+}
 
 export default function HRLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -23,7 +33,9 @@ export default function HRLayout() {
       <div className="app-main">
         <TopNav onToggleMenu={() => setMobileOpen((current) => !current)} />
         <main className="app-content">
-          <Outlet />
+          <Suspense fallback={<ContentFallback />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

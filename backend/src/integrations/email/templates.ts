@@ -190,6 +190,7 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
   const jobTitle = s(data, "jobTitle", "the position");
   const company = s(data, "companyName", "Ecometrics Consultant Pvt. Ltd. (EMC)");
   const appUrl = s(data, "appUrl", env.appUrl);
+  const careerSiteUrl = s(data, "careerSiteUrl", env.careerSiteUrl);
 
   let subject = "";
   let html = "";
@@ -332,7 +333,7 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           ]) +
           p(`Our recruitment team will review your profile. If your application progresses, we will reach out with the next steps.`),
         ctaLabel: "View my application",
-        ctaUrl: s(data, "link", `${appUrl}/career`),
+        ctaUrl: s(data, "link", careerSiteUrl),
         ctaColor: "orange",
       });
       break;
@@ -348,7 +349,7 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           p(`We are pleased to let you know that your application for <strong>${esc(jobTitle)}</strong> has been shortlisted.`) +
           p(`Our recruitment team will contact you shortly to arrange the next stage of the selection process.`),
         ctaLabel: "View my applications",
-        ctaUrl: s(data, "link", `${appUrl}/career`),
+        ctaUrl: s(data, "link", careerSiteUrl),
         ctaColor: "orange",
       });
       break;
@@ -433,7 +434,7 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           p(`We are absolutely delighted to inform you that you have been <strong>selected for ${esc(jobTitle)}</strong> at ${esc(company)}.`) +
           p(`Our HR team will share your offer details and onboarding instructions shortly.`),
         ctaLabel: "View my applications",
-        ctaUrl: s(data, "link", `${appUrl}/career`),
+        ctaUrl: s(data, "link", careerSiteUrl),
         ctaColor: "orange",
       });
       break;
@@ -450,14 +451,14 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           (data.reason ? p(`<strong>Feedback:</strong> ${esc(data.reason)}`) : "") +
           p(`We encourage you to keep an eye on future openings that match your experience — we would love to see you apply again.`),
         ctaLabel: "View open positions",
-        ctaUrl: s(data, "link", `${appUrl}/careers/jobs`),
+        ctaUrl: s(data, "link", careerSiteUrl),
       });
       break;
 
     case "offer_letter":
       subject = `Your offer from EMC — ${jobTitle}`;
       html = layout({
-        title: "Your offer letter is ready",
+        title: "Your offer of employment",
         eyebrow: "Offer of Employment",
         preheader: `Your offer from EMC for ${jobTitle} is attached.`,
         body:
@@ -469,7 +470,6 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
             ["Annual CTC", data.ctc],
             ["Date of Joining", data.joiningDate ? new Date(String(data.joiningDate)).toLocaleDateString() : ""],
             ["Work Location", data.workLocation],
-            ["Reporting To", data.reportingTo],
             ["Offer Valid Until", data.expiryDate ? new Date(String(data.expiryDate)).toLocaleDateString() : ""],
           ]) +
           p(`The offer letter PDF is attached to this email. Please review and respond using the secure button below.`),
@@ -513,7 +513,7 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
           ]) +
           p(`Please use the secure link below to accept or decline the offer.`),
         ctaLabel: "Review and respond to the offer",
-        ctaUrl: s(data, "link", `${appUrl}/careers/jobs`),
+        ctaUrl: s(data, "link", careerSiteUrl),
         ctaColor: "orange",
       });
       break;
@@ -610,13 +610,34 @@ export function renderEmail(templateKey: string, data: TemplateData): RenderedEm
             ? detailTable([["Work email", data.email], ["Temporary password", tempPassword]]) +
               p(`Use the temporary password above with your work email to sign in. You may be asked to change it after your first sign-in. A one-time sign-in code by email is also available as an alternative.`) +
               p(`<strong>Keep this password private.</strong> If it does not work, use the OTP option on the login page or contact the IT administrator.`)
-            : p(`Sign in with this email address using a one-time password — no password setup is required.`)),
+            : p(`Sign in with this email address and a 6-digit code from your authenticator app — no password is required. Use the separate setup link in your email to activate your authenticator.`)),
         ctaLabel: "Open HR portal",
         ctaUrl: s(data, "link", `${appUrl}/hr/login`),
         ctaColor: "green",
       });
       break;
     }
+
+    case "hr_totp_enrollment":
+      subject = "Set up your authenticator for the EMC HR portal";
+      html = layout({
+        title: "Set up your authenticator",
+        eyebrow: "HR Portal Security Setup",
+        preheader: "Your one-time authenticator setup link is ready.",
+        body:
+          p(`Hello ${esc(name)},`) +
+          p(`Your administrator has authorized authenticator setup for your EMC HR account.`) +
+          detailTable([
+            ["Account email", data.email],
+            ["Link validity", s(data, "expiresIn", "10 minutes")],
+          ]) +
+          p(`Open the secure link below, scan the QR code with Google Authenticator, Microsoft Authenticator, Zoho OneAuth or any RFC 6238 compatible app, then enter the 6-digit code to activate.`) +
+          p(`<strong>This link is unique to you, expires soon and can only be used once.</strong> Do not forward it. If you did not expect this email, contact your administrator.`),
+        ctaLabel: "Set up authenticator",
+        ctaUrl: s(data, "link"),
+        ctaColor: "green",
+      });
+      break;
 
     case "hr_otp":
       subject = `${s(data, "code", "")} is your EMC HR login code`;

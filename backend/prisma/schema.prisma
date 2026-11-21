@@ -26,6 +26,16 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // TOTP (RFC 6238) — HR role sign-in. Secrets are AES-256-GCM encrypted at rest.
+  totpSecretEncrypted     String?
+  totpEnabled             Boolean   @default(false)
+  totpEnrollmentPending   Boolean   @default(false)
+  totpLastUsedStep        BigInt?
+  totpEnabledAt           DateTime?
+  failedTotpAttempts      Int       @default(0)
+  lockedUntil             DateTime?
+
+  totpEnrollments      TotpEnrollment[]
   roles                UserRole[]
   departments          UserDepartment[]
   sessions             AuthSession[]
@@ -41,12 +51,33 @@ model User {
   documentHistory      DocumentVerificationHistory[]
   matchesComputed      CandidateJobMatch[]          @relation("MatchComputedBy")
   screeningRuns        AiScreeningRun[]
+  screeningJobs        AiScreeningJob[]            @relation("ScreeningJobCreator")
   invitationsCreated   EmployeeUpdateInvitation[]   @relation("InvitationCreatedBy")
   departmentChanges    EmployeeDepartmentHistory[]  @relation("DepartmentChangedBy")
   cvVersionsUploaded   CvVersion[]                  @relation("CvUploadedBy")
   permissionOverrides  UserPermissionOverride[]
 
+  @@index([totpEnabled])
   @@map("users")
+}
+
+/// Short-lived, single-use enrollment link issued by an administrator and
+/// emailed to the HR user's registered address. Only a valid token can start
+/// or complete authenticator enrollment.
+model TotpEnrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("totp_enrollments")
 }
 
 model Role {
@@ -96,6 +127,7 @@ model UserRole {
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, roleId])
+  @@index([roleId])
   @@map("user_roles")
 }
 
@@ -341,6 +373,7 @@ model Candidate {
 
   @@index([fullName])
   @@index([email])
+  @@index([status])
   @@map("candidates")
 }
 
@@ -449,6 +482,7 @@ model CvVersion {
 
   @@index([candidateId])
   @@index([employeeId])
+  @@index([employeeId, isCurrent])
   @@map("cv_versions")
 }
 
@@ -482,6 +516,7 @@ model EmployeeUpdateInvitation {
   @@index([employeeId])
   @@index([status])
   @@index([submissionStatus])
+  @@index([employeeId, usedAt])
   @@map("employee_update_invitations")
 }
 
@@ -541,10 +576,13 @@ model JobOpening {
   requirements   JobRequirement[]
   matches        CandidateJobMatch[]
   screeningRuns  AiScreeningRun[]
+  screeningJobs  AiScreeningJob[]
 
   @@index([status])
   @@index([departmentId])
   @@index([deadline])
+  @@index([createdAt])
+  @@index([status, createdAt])
   @@map("job_openings")
 }
 
@@ -569,6 +607,10 @@ model Application {
   jobOpeningId    String
   status          String    @default("APPLIED")
   aiMatchScore    Float?
+  // AI screening lifecycle: PENDING | PROCESSING | EVALUATED | FAILED.
+  // Nullable so existing rows keep working before the additive migration runs.
+  screeningStatus String?
+  screeningError  String?   @db.Text
   source          String    @default("CAREER_PORTAL")
   coverLetter     String?   @db.Text
   resumeFileId    String?
@@ -576,9 +618,21 @@ model Application {
   finalSelectionSalary Float?
   finalSelectionExpectedSalary Float?
   finalSelectionNote String?  @db.Text
+  finalSelectionDesignation String?
+  adminApprovedAt      DateTime?
   appliedAt       DateTime  @default(now())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  // Exact inputs of the original EMC careers apply form plus one CV upload.
+  job_id          String?
+  job_title       String?
+  full_name       String?
+  email           String?
+  phone           String?
+  experience      String?
+  cover_letter    String?   @db.Text
+  cv_file_name    String?
 
   candidate  Candidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   jobOpening JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
@@ -588,13 +642,16 @@ model Application {
   remarks       ApplicationRemark[]
   interviews    Interview[]
   offer         OfferLetter?
-  documents     CandidateDocument[]
-  matches       CandidateJobMatch[]
-
-  @@unique([candidateId, jobOpeningId])
+    documents     CandidateDocument[]
+    matches       CandidateJobMatch[]
+    screeningDecisions ScreeningDecision[]
+  
+    @@unique([candidateId, jobOpeningId])
   @@index([status])
   @@index([jobOpeningId])
   @@index([appliedAt])
+  @@index([jobOpeningId, status, appliedAt])
+  @@index([jobOpeningId, screeningStatus])
   @@map("applications")
 }
 
@@ -644,22 +701,68 @@ model CandidateJobMatch {
   missingSkills       Json      @default("[]")
   strengths           Json      @default("[]")
   gaps                Json      @default("[]")
-  explanation         String    @db.Text
-  extractionConfidence Float?
-  weights             Json?
+    explanation         String    @db.Text
+    extractionConfidence Float?
+    weights             Json?
+    scoringVersion      String?
+    projectScore        Float?
+    roleScore           Float?
+    dimensionScores     Json?
+    recommendation      String?
+    dataCompleteness    Float?
+    evidence            Json?
   computedById        String?
   computedAt          DateTime  @default(now())
 
   candidate   Candidate  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   jobOpening  JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
   application Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  computedBy  User?      @relation("MatchComputedBy", fields: [computedById], references: [id], onDelete: SetNull)
-
-  @@unique([candidateId, jobOpeningId])
+    computedBy  User?      @relation("MatchComputedBy", fields: [computedById], references: [id], onDelete: SetNull)
+    evidenceRecords AiMatchEvidence[]
+  
+    @@unique([candidateId, jobOpeningId])
   @@index([jobOpeningId])
   @@index([overallScore])
-  @@map("candidate_job_matches")
-}
+    @@index([jobOpeningId, overallScore])
+    @@map("candidate_job_matches")
+  }
+  
+  model ScreeningDecision {
+    id                     String   @id @default(cuid())
+    applicationId          String
+    candidateId            String
+    jobOpeningId           String
+    decision               String
+    previousRecommendation String?
+    overrideReason         String?  @db.Text
+    remarks                String?  @db.Text
+    decidedById            String?
+    decidedAt              DateTime @default(now())
+    scoringVersion         String?
+    createdAt              DateTime @default(now())
+  
+    application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+    @@index([applicationId])
+    @@map("screening_decisions")
+  }
+  
+  model AiMatchEvidence {
+    id                  String   @id @default(cuid())
+    candidateJobMatchId String
+    dimension           String
+    score               Float?
+    applicability       String
+    weight              Float
+    evidence            Json     @default("[]")
+    reason              String   @db.Text
+    createdAt           DateTime @default(now())
+  
+    match CandidateJobMatch @relation(fields: [candidateJobMatchId], references: [id], onDelete: Cascade)
+  
+    @@index([candidateJobMatchId])
+    @@map("ai_match_evidence")
+  }
 
 model CvExtractionResult {
   id          String   @id @default(cuid())
@@ -693,6 +796,46 @@ model AiScreeningRun {
 
   @@index([jobOpeningId])
   @@map("ai_screening_runs")
+}
+
+/// A background CV-screening batch. The HTTP request returns as soon as the
+/// row exists; the worker updates progress as candidates finish. The UI polls
+/// GET /ai-screening/jobs/:id until status is COMPLETED or FAILED.
+/// Shared cache generation counters. When one server invalidates a namespace it
+/// increments this row; every other server sees the new generation on its next
+/// sync and drops stale local entries. No external cache service required.
+model CacheGeneration {
+  namespace  String   @id
+  generation Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@map("cache_generations")
+}
+
+model AiScreeningJob {
+  id           String    @id @default(cuid())
+  jobOpeningId String
+  createdById  String?
+  status       String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  options      Json?     // { includeInternal, force } captured from the request
+  total        Int       @default(0)
+  processed    Int       @default(0)
+  succeeded    Int       @default(0)
+  failed       Int       @default(0)
+  skipped      Int       @default(0)
+  topScore     Float?
+  error        String?   @db.Text
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  jobOpening JobOpening @relation(fields: [jobOpeningId], references: [id], onDelete: Cascade)
+  createdBy  User?      @relation("ScreeningJobCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([jobOpeningId, createdAt])
+  @@index([status])
+  @@map("ai_screening_jobs")
 }
 
 // ------------------------------------------------------------
@@ -735,6 +878,8 @@ model Interview {
 
   @@index([applicationId])
   @@index([scheduledAt])
+  @@index([status])
+  @@index([status, scheduledAt])
   @@map("interviews")
 }
 
@@ -745,6 +890,7 @@ model InterviewFeedback {
   score           Int?
   feedback        String?  @db.Text
   recommendation  String?
+  result          String?
   submittedAt     DateTime @default(now())
 
   interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
@@ -770,8 +916,9 @@ model OfferTemplate {
 model OfferLetter {
   id                   String    @id @default(cuid())
   applicationId        String    @unique
-  designation          String
-  departmentId         String?
+    designation          String
+    salutation           String?
+    departmentId         String?
   ctc                  Float?
   salaryStructure      String?   @db.Text
   joiningDate          DateTime?
@@ -785,6 +932,8 @@ model OfferLetter {
   sentAt               DateTime?
   viewedAt             DateTime?
   respondedAt          DateTime?
+  reminderCount        Int       @default(0)
+  lastReminderSentAt   DateTime?
   responseRemarks      String?   @db.Text
   createdById          String?
   createdAt            DateTime  @default(now())
@@ -797,6 +946,8 @@ model OfferLetter {
   createdBy      User?           @relation("OfferCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
   @@map("offer_letters")
 }
 
@@ -886,6 +1037,7 @@ model EmailLog {
 
   @@index([toEmail])
   @@index([status])
+  @@index([createdAt])
   @@map("email_logs")
 }
 
@@ -907,6 +1059,7 @@ model Notification {
 
   @@index([recipientUserId, isRead])
   @@index([recipientCandidateId, isRead])
+  @@index([recipientUserId, isRead, createdAt])
   @@map("notifications")
 }
 

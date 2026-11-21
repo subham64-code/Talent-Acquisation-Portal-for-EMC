@@ -1,27 +1,31 @@
+import { lazy } from "react";
 import { Navigate, Routes, Route } from "react-router-dom";
 import HRLayout from "./Layout";
-import Dashboard from "./Dashboard";
-import HrWorkspaceDashboard from "./HrWorkspaceDashboard";
-import Help from "./Help";
-import Approvals from "./Approvals";
-import Openings from "./Openings";
-import EmployeeProfile from "./EmployeeProfile";
-import Submissions from "./Submissions";
-import AIScreening from "./AIScreening";
-import CandidateProfile from "./CandidateProfile";
-import Shortlisting from "./Shortlisting";
-import FinalSelection from "./FinalSelection";
-import Interviews from "./Interviews";
-import Offers from "./Offers";
-import Employees from "./Employees";
-import Reports from "./Reports";
-import Notifications from "./Notifications";
-import Users from "./Users";
-import Settings from "./Settings";
-import Onboarding from "./Onboarding";
-import AccessControl from "./AccessControl";
 import RequirePermission from "../../components/RequirePermission";
 import { SECTION_PERMISSIONS } from "../../lib/sectionPermissions";
+
+// Each screen is its own chunk so a device only downloads the page it opens.
+// Sidebar links prefetch the chunk on hover/focus, making navigation instant.
+const Dashboard = lazy(() => import("./Dashboard"));
+const HrWorkspaceDashboard = lazy(() => import("./HrWorkspaceDashboard"));
+const Help = lazy(() => import("./Help"));
+const Approvals = lazy(() => import("./Approvals"));
+const Openings = lazy(() => import("./Openings"));
+const EmployeeProfile = lazy(() => import("./EmployeeProfile"));
+const Submissions = lazy(() => import("./Submissions"));
+const AIScreening = lazy(() => import("./AIScreening"));
+const CandidateProfile = lazy(() => import("./CandidateProfile"));
+const Shortlisting = lazy(() => import("./Shortlisting"));
+const FinalSelection = lazy(() => import("./FinalSelection"));
+const Interviews = lazy(() => import("./Interviews"));
+const Offers = lazy(() => import("./Offers"));
+const Employees = lazy(() => import("./Employees"));
+const Reports = lazy(() => import("./Reports"));
+const Notifications = lazy(() => import("./Notifications"));
+const Users = lazy(() => import("./Users"));
+const Settings = lazy(() => import("./Settings"));
+const Onboarding = lazy(() => import("./Onboarding"));
+const AccessControl = lazy(() => import("./AccessControl"));
 
 export default function HRRoutes() {
   return (

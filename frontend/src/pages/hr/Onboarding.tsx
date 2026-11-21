@@ -1,11 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, Briefcase, CheckCircle2, Download, Eye, FileCheck2, FileText, Mail, RefreshCw, Search, Upload, XCircle } from "lucide-react";
+import { BellRing, Briefcase, CheckCircle2, Download, Eye, FileCheck2, FileText, Mail, Pencil, RefreshCw, Search, XCircle } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import Badge from "../../components/ref/Badge";
 import PageHeader from "../../components/ref/PageHeader";
 import Button from "../../components/ref/Button";
 import Modal from "../../components/ref/Modal";
+import { Input } from "../../components/ref/Input";
 import CandidateStatusBadge from "../../components/ref/CandidateStatusBadge";
 import EmptyState from "../../components/ref/EmptyState";
 import DataTable, { type Column } from "../../components/DataTable";
@@ -56,28 +57,39 @@ export default function Onboarding() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
-  const [selectedForOffer, setSelectedForOffer] = useState<any>(null);
   const [docReminding, setDocReminding] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState("Document");
   const invalidate = useInvalidate();
   const [onboardingId, setOnboardingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [correctionTarget, setCorrectionTarget] = useState<any>(null);
+  const [correctionEmail, setCorrectionEmail] = useState("");
+  const [manualEdit, setManualEdit] = useState(false);
+  const [manualValues, setManualValues] = useState({ fullName: "", email: "", mobile: "" });
 
-  const { data: docs = [], isLoading, refetch } = useApiQuery<any[]>(
+  const { data: docs = [], isLoading } = useApiQuery<any[]>(
     ["documents", "all"],
-    () => hrApi.documents({ page: 1, pageSize: 500 }).then((r: any) => r?.data?.items ?? []),
+    () => hrApi.documents({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
   );
   const { data: offers = [] } = useApiQuery<any[]>(
     ["offers", "onboarding", "all"],
-    () => hrApi.offers({ page: 1, pageSize: 500 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+    () => hrApi.offers({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
   );
   const { data: readyApps = [] } = useApiQuery<any[]>(
     ["onboarding", "ready"],
-    () => Promise.all(
-      ["OFFER_ACCEPTED", "DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW"].map((status) =>
-        hrApi.applications({ page: 1, pageSize: 20, status }).then((r: any) => r?.data?.items ?? []),
-      ),
-    ).then((lists) => lists.flat()),
+    () => hrApi.applications({
+      page: 1,
+      pageSize: 60,
+      status: "OFFER_ACCEPTED,DOCUMENTS_PENDING,DOCUMENTS_UNDER_REVIEW",
+    }).then((r: any) => r?.data?.items ?? []),
   );
+  const { data: existingEmployees = [] } = useApiQuery<any[]>(
+    ["employees", "dropdown"],
+    () => hrApi.employeeDropdown().then((r: any) => r?.data?.items ?? r?.data ?? []),
+  );
+
+  const hasDuplicateEmail = (email?: string) => Boolean(email) && existingEmployees.some((employee: any) => String(employee.officialEmail ?? "").toLowerCase() === String(email).toLowerCase());
 
   useEffect(() => { setPage(1); }, [search, offerFilter]);
 
@@ -129,12 +141,12 @@ export default function Onboarding() {
   const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / pageSize));
   const pagedCandidates = filteredCandidates.slice((page - 1) * pageSize, page * pageSize);
 
-  const filteredDocs = docs.filter((d) => matchesSearch(search, [d.application?.candidate?.fullName, d.application?.applicationCode, d.category?.name, d.status]));
+  const filteredDocs = docs
+    .filter((d) => matchesSearch(search, [d.application?.candidate?.fullName, d.application?.applicationCode, d.category?.name, d.status]))
+    .sort((left: any, right: any) => (left.category?.sortOrder ?? 999) - (right.category?.sortOrder ?? 999));
   const pendingDocs = filteredDocs.filter((d) => ["NOT_UPLOADED", "REUPLOAD_REQUIRED"].includes(d.status));
 
   const submitted = useMemo(() => docs.filter((d) => ["UPLOADED", "UNDER_REVIEW", "REJECTED", "ACCEPTED"].includes(d.status)), [docs]);
-  const pending = useMemo(() => docs.filter((d) => ["NOT_UPLOADED", "REUPLOAD_REQUIRED"].includes(d.status)), [docs]);
-
   const counts = {
     ready: visibleReady.length,
     submitted: submitted.length,
@@ -142,19 +154,84 @@ export default function Onboarding() {
     reupload: docs.filter((d) => d.status === "REUPLOAD_REQUIRED").length,
   };
 
-  const addToExisting = async (app: any) => {
-    const name = app.candidate?.fullName ?? "This candidate";
+  const addToExisting = async (app: any, overrides?: { fullName: string; officialEmail: string; mobile: string }) => {
+    const name = overrides?.fullName || app.candidate?.fullName || "This candidate";
     if (!window.confirm(`Add ${name} to Existing Employees?\n\nThis creates a new employee record (reusing the offer details and CV) and marks the application as HIRED.`)) return;
     setOnboardingId(app.id);
     setError("");
     try {
-      await hrApi.onboardEmployeeFromApplication(app.id);
+      const res: any = await hrApi.onboardEmployeeFromApplication(app.id, overrides ? { overrides } : {});
+      if (res?.data?.duplicate) {
+        setError(`${res?.data?.message ?? "An employee already exists with this email."} Use Edit details to send a correction link.`);
+        return;
+      }
       window.setTimeout(() => navigate("/hr/employees?tab=current"), 250);
       setNotice(`${name} added to Existing Employees.`);
       setDismissed(new Set([...dismissed, app.id]));
       invalidate(["documents", "dashboard", "employees", "employee"]);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not add the employee.");
+    } finally {
+      setOnboardingId(null);
+    }
+  };
+
+  const openCorrection = (app: any) => {
+    setCorrectionTarget(app);
+    setCorrectionEmail("");
+    setError("");
+    setNotice("");
+  };
+
+  const toggleManualEdit = (app: any) => {
+    if (manualEdit) {
+      setManualEdit(false);
+      return;
+    }
+    setManualValues({
+      fullName: app.candidate?.fullName ?? "",
+      email: app.candidate?.email ?? "",
+      mobile: app.candidate?.mobile ?? "",
+    });
+    setManualEdit(true);
+    setError("");
+    setNotice("");
+  };
+
+  const saveManualEdit = async (app: any) => {
+    const candidateId = app.candidate?.id;
+    if (!candidateId) return;
+    setOnboardingId(app.key);
+    setError("");
+    setNotice("");
+    try {
+      await hrApi.updateCandidate(candidateId, {
+        fullName: manualValues.fullName,
+        email: manualValues.email,
+        mobile: manualValues.mobile,
+      });
+      setNotice(`Updated details for ${manualValues.fullName}.`);
+      setManualEdit(false);
+      invalidate(["offers", "onboarding", "documents", "candidates"]);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not save the candidate details.");
+    } finally {
+      setOnboardingId(null);
+    }
+  };
+
+  const sendCorrectionLink = async () => {
+    if (!correctionTarget || !correctionEmail.trim()) return;
+    setOnboardingId(correctionTarget.id);
+    setError("");
+    setNotice("");
+    try {
+      const res: any = await hrApi.onboardEmployeeFromApplication(correctionTarget.id, { correctionEmail: correctionEmail.trim() });
+      setNotice(res?.data?.message ?? `Correction link sent to ${correctionEmail.trim()}. After the candidate submits and HR validates the update, add the candidate to Existing Employees again.`);
+      setCorrectionTarget(null);
+      invalidate(["employee-invitations", "employee-submissions"]);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Could not send the correction link.");
     } finally {
       setOnboardingId(null);
     }
@@ -195,21 +272,27 @@ export default function Onboarding() {
     }
   };
 
-  const viewDocument = async (fileId?: string) => {
+  const viewDocument = async (fileId?: string, name = "Document") => {
     if (!fileId) return;
     try {
+      if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
       const r = await hrApi.fileAccessToken(fileId);
       const token = r?.data?.token;
       if (token) {
         const blobRes = await hrApi.file(fileId, token);
-        const url = URL.createObjectURL(blobRes.data as Blob);
-        window.open(url, "_blank", "noreferrer");
-      } else {
-        window.open(r?.data?.url, "_blank", "noreferrer");
+        setPreviewUrl(URL.createObjectURL(blobRes.data as Blob));
+      } else if (r?.data?.url) {
+        setPreviewUrl(r.data.url);
       }
+      setPreviewName(name);
     } catch {
       setError("Cannot open this document.");
     }
+  };
+
+  const closePreview = () => {
+    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
   };
 
   const exportCsv = () => {
@@ -243,7 +326,7 @@ export default function Onboarding() {
     { key: "offer", header: "Offer status", render: (row) => { const meta = offerStatusMeta(row.offer?.status); return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
     { key: "documents", header: "Documents", render: (row) => { const accepted = row.docs.filter((doc: any) => doc.status === "ACCEPTED").length; const uploaded = row.docs.filter((doc: any) => ["UPLOADED", "UNDER_REVIEW", "ACCEPTED"].includes(doc.status)).length; const reupload = row.docs.filter((doc: any) => doc.status === "REUPLOAD_REQUIRED").length; return <div className="doc-progress"><span>{uploaded} uploaded</span><span className="cell-muted">{accepted} accepted</span>{reupload > 0 && <Badge variant="orange">{reupload} re-upload</Badge>}</div>; } },
     { key: "feedback", header: "Candidate feedback", render: (row) => row.offer?.responseRemarks ? <span className="cell-ellipsis" title={row.offer.responseRemarks}>{row.offer.responseRemarks}</span> : <span className="cell-muted">—</span> },
-    { key: "action", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><button type="button" className="btn btn--ghost btn--icon" aria-label="View details" title="View details" onClick={() => setSelectedCandidateId(row.key)}><Eye size={16} /></button>{row.offer?.id && ["SENT", "VIEWED"].includes(row.offer.status) && <button type="button" className="btn btn--ghost btn--icon" aria-label="Send offer reminder" title="Send offer reminder" onClick={() => remindOffer(row.offer.id, row.candidate?.fullName)}><BellRing size={16} /></button>}</div> },
+    { key: "action", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><button type="button" className="btn btn--ghost btn--icon" aria-label="View details" title="View details" onClick={() => setSelectedCandidateId(row.key)}><Eye size={16} /></button>{row.candidate?.cvFileId && <button type="button" className="btn btn--ghost btn--icon" aria-label="Preview CV" title="Preview CV" onClick={() => void viewDocument(row.candidate.cvFileId, "CV")}><FileText size={16} /></button>}{hasDuplicateEmail(row.candidate?.email) && <button type="button" className="btn btn--ghost btn--icon" aria-label="Edit details" title="Edit details — send correction link" onClick={() => openCorrection(row)}><Pencil size={16} /></button>}{row.offer?.id && ["SENT", "VIEWED"].includes(row.offer.status) && <button type="button" className="btn btn--ghost btn--icon" aria-label="Send offer reminder" title="Send offer reminder" onClick={() => remindOffer(row.offer.id, row.candidate?.fullName)}><BellRing size={16} /></button>}</div> },
   ];
 
   const documentColumns: Column<any>[] = [
@@ -253,7 +336,7 @@ export default function Onboarding() {
     { key: "updated", header: "Updated", render: (d) => <span className="cell-muted">{d.uploadedAt ? formatDate(d.uploadedAt) : "—"}</span> },
     { key: "actions", header: "Actions", className: "text-right", render: (d) => (
       <div className="cell-actions">
-        {d.fileId && <button type="button" className="btn btn--ghost btn--icon" title="View document" aria-label="View document" onClick={() => void viewDocument(d.fileId)}><FileText size={16} /></button>}
+        {d.fileId && <button type="button" className="btn btn--ghost btn--icon" title="View document" aria-label="View document" onClick={() => void viewDocument(d.fileId, d.category?.name)}><FileText size={16} /></button>}
         {d.status !== "ACCEPTED" && <button type="button" className="btn btn--outline btn--icon" title="Accept" aria-label="Accept document" onClick={() => verify(d.id, "ACCEPTED")}><CheckCircle2 size={16} /></button>}
         <button type="button" className="btn btn--ghost btn--icon" title="Request re-upload" aria-label="Request re-upload" onClick={() => verify(d.id, "REUPLOAD_REQUIRED")}><RefreshCw size={16} /></button>
         <button type="button" className="btn btn--danger-ghost btn--icon" title="Reject" aria-label="Reject document" onClick={() => verify(d.id, "REJECTED")}><XCircle size={16} /></button>
@@ -270,7 +353,7 @@ export default function Onboarding() {
         eyebrow="Ecometrix · Talent Acquisition"
         title="Joining & Onboarding"
         subtitle="Every offer sent/accepted, candidate feedback and required documents in one scalable, filterable view."
-        actions={<><Button variant="outline" icon={RefreshCw} onClick={() => void refetch()}>Refresh data</Button><Button variant="outline" icon={Download} onClick={exportCsv}>Export CSV</Button></>}
+        actions={<><Button variant="outline" icon={RefreshCw} onClick={() => void invalidate(["documents", "offers", "onboarding", "employees", "applications"])}>Refresh data</Button><Button variant="outline" icon={Download} onClick={exportCsv}>Export CSV</Button></>}
       />
 
       {notice && <div className="notice notice--success" role="status"><div className="notice__body">{notice}</div></div>}
@@ -291,7 +374,7 @@ export default function Onboarding() {
               {visibleReady.slice(0, 5).map((a) => (
                 <li className="ta-list__item" key={a.id}>
                   <div className="ta-list__body"><div className="ta-list__title">{a.candidate?.fullName}</div><div className="ta-list__meta">{a.jobOpening?.title} · {a.jobOpening?.department?.name || "—"} · <span className="font-mono">{a.applicationCode}</span></div></div>
-                  <div className="ta-inline-actions"><Button size="sm" variant="primary" disabled={onboardingId === a.id} onClick={() => void addToExisting(a)} loading={onboardingId === a.id}>Yes — Add to Existing</Button><Button size="sm" variant="outline" onClick={() => keepInPipeline(a)}>No — Keep in Pipeline</Button></div>
+                  <div className="ta-inline-actions"><Button size="sm" variant="primary" disabled={onboardingId === a.id} onClick={() => void addToExisting(a)} loading={onboardingId === a.id}>Yes — Add to Existing</Button>{hasDuplicateEmail(a.candidate?.email) && <Button size="sm" variant="outline" icon={Pencil} onClick={() => openCorrection(a)}>Edit details</Button>}<Button size="sm" variant="outline" onClick={() => keepInPipeline(a)}>No — Keep in Pipeline</Button></div>
                 </li>
               ))}
             </ul>
@@ -335,15 +418,34 @@ export default function Onboarding() {
       )}
 
       <Modal
+        open={Boolean(previewUrl)}
+        onClose={closePreview}
+        title={previewName}
+        size="lg"
+        footer={<Button variant="outline" onClick={closePreview}>Close</Button>}
+      >
+        {previewUrl && (/\.(png|jpe?g|webp|gif)(\?|$)/i.test(previewUrl)
+          ? <img src={previewUrl} alt={previewName} style={{ maxWidth: "100%", maxHeight: 520, display: "block", margin: "0 auto" }} />
+          : <iframe title={previewName} src={previewUrl} style={{ width: "100%", height: 520, border: 0 }} />)}
+      </Modal>
+
+      <Modal
         open={Boolean(selectedCandidate)}
-        onClose={() => setSelectedCandidateId(null)}
+        onClose={() => { setSelectedCandidateId(null); setManualEdit(false); }}
         title={selectedCandidate ? selectedCandidate.candidate?.fullName ?? "Candidate" : "Candidate"}
         subtitle={selectedCandidate?.job?.title ?? undefined}
         size="xl"
-        footer={selectedCandidate?.offer?.id && ["SENT", "VIEWED", "DRAFT"].includes(selectedCandidate.offer.status) ? <Button icon={BellRing} onClick={() => remindOffer(selectedCandidate.offer.id, selectedCandidate.candidate?.fullName)}>Send offer reminder</Button> : undefined}
+        footer={selectedCandidate ? <>
+            <Button variant="outline" icon={Pencil} onClick={() => toggleManualEdit(selectedCandidate)}>{manualEdit ? "Cancel edit" : "Edit manually"}</Button>
+            {manualEdit && <Button icon={CheckCircle2} loading={onboardingId === selectedCandidate.key} disabled={Boolean(onboardingId) || !manualValues.fullName.trim() || !manualValues.email.trim()} onClick={() => void saveManualEdit(selectedCandidate)}>Save changes</Button>}
+            {selectedCandidate.candidate?.cvFileId && <Button variant="outline" icon={FileText} onClick={() => void viewDocument(selectedCandidate.candidate.cvFileId, "CV")}>Preview CV</Button>}
+            {hasDuplicateEmail(selectedCandidate.candidate?.email) && <Button variant="outline" icon={Mail} onClick={() => { setSelectedCandidateId(null); setManualEdit(false); openCorrection(selectedCandidate); }}>Send correction link</Button>}
+          {["SELECTED", "OFFER_SENT", "OFFER_ACCEPTED", "DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW"].includes(selectedCandidate.application?.status) && <Button icon={CheckCircle2} loading={onboardingId === selectedCandidate.key} disabled={Boolean(onboardingId)} onClick={() => void addToExisting(selectedCandidate, manualEdit ? { fullName: manualValues.fullName, officialEmail: manualValues.email, mobile: manualValues.mobile } : undefined)}>Add to Existing Employees</Button>}
+          {selectedCandidate.offer?.id && ["SENT", "VIEWED", "DRAFT"].includes(selectedCandidate.offer.status) && <Button icon={BellRing} onClick={() => remindOffer(selectedCandidate.offer.id, selectedCandidate.candidate?.fullName)}>Send offer reminder</Button>}
+        </> : undefined}
       >
         {selectedCandidate && (() => {
-          const docsInRow = selectedCandidate.docs ?? [];
+          const docsInRow = [...(selectedCandidate.docs ?? [])].sort((left: any, right: any) => (left.category?.sortOrder ?? 999) - (right.category?.sortOrder ?? 999));
           const accepted = docsInRow.filter((doc: any) => doc.status === "ACCEPTED");
           const pendingCount = docsInRow.length - accepted.length;
           const offerMeta = offerStatusMeta(selectedCandidate.offer?.status);
@@ -354,8 +456,9 @@ export default function Onboarding() {
                 <div className="detail-grid detail-grid--3">
                   <div className="detail-item"><div className="detail-item__label">Candidate ID</div><div className="detail-item__value">{selectedCandidate.candidate?.candidateCode ?? "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Application</div><div className="detail-item__value">{selectedCandidate.application?.applicationCode ?? "—"}</div></div>
-                  <div className="detail-item"><div className="detail-item__label">Email</div><div className="detail-item__value">{selectedCandidate.candidate?.email ?? "—"}</div></div>
-                  <div className="detail-item"><div className="detail-item__label">Phone</div><div className="detail-item__value">{selectedCandidate.candidate?.mobile ?? "—"}</div></div>
+                    <div className="detail-item"><div className="detail-item__label">Full name</div>{manualEdit ? <Input value={manualValues.fullName} onChange={(event) => setManualValues((current) => ({ ...current, fullName: event.target.value }))} aria-label="Full name" /> : <div className="detail-item__value">{selectedCandidate.candidate?.fullName ?? "—"}</div>}</div>
+                    <div className="detail-item"><div className="detail-item__label">Email</div>{manualEdit ? <Input type="email" value={manualValues.email} onChange={(event) => setManualValues((current) => ({ ...current, email: event.target.value }))} aria-label="Email" /> : <div className="detail-item__value">{selectedCandidate.candidate?.email ?? "—"}</div>}</div>
+                    <div className="detail-item"><div className="detail-item__label">Phone</div>{manualEdit ? <Input value={manualValues.mobile} onChange={(event) => setManualValues((current) => ({ ...current, mobile: event.target.value }))} aria-label="Phone" /> : <div className="detail-item__value">{selectedCandidate.candidate?.mobile ?? "—"}</div>}</div>
                   <div className="detail-item"><div className="detail-item__label">Position</div><div className="detail-item__value">{selectedCandidate.job?.title ?? "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Department</div><div className="detail-item__value">{selectedCandidate.job?.department?.name ?? "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Application status</div><div className="detail-item__value"><CandidateStatusBadge status={selectedCandidate.application?.status} /></div></div>
@@ -379,7 +482,7 @@ export default function Onboarding() {
                       <div className="ta-detail-list__title">{doc.category?.name ?? "Document"}</div>
                       <div className="ta-detail-list__meta"><Badge variant={meta.variant} dot>{meta.label}</Badge>{doc.uploadedAt ? ` · ${formatDate(doc.uploadedAt)}` : ""}</div>
                       {doc.remarks && <p className="ta-detail-list__text">{doc.remarks}</p>}
-                      <div className="doc-row-actions"><button type="button" className="ta-link" onClick={() => void viewDocument(doc.fileId)}>View file</button>{doc.status !== "ACCEPTED" && <button type="button" className="ta-link" onClick={() => void verify(doc.id, "ACCEPTED")}>Accept</button>}<button type="button" className="ta-link" onClick={() => void verify(doc.id, "REUPLOAD_REQUIRED")}>Re-upload</button>{doc.status !== "UPLOADED" && <button type="button" className="ta-link" onClick={() => void remindDocument(doc.id)}>Remind</button>}</div>
+                      <div className="doc-row-actions"><button type="button" className="ta-link" onClick={() => void viewDocument(doc.fileId, doc.category?.name)}>View file</button>{doc.status !== "ACCEPTED" && <button type="button" className="ta-link" onClick={() => void verify(doc.id, "ACCEPTED")}>Accept</button>}<button type="button" className="ta-link" onClick={() => void verify(doc.id, "REUPLOAD_REQUIRED")}>Re-upload</button>{doc.status !== "UPLOADED" && <button type="button" className="ta-link" onClick={() => void remindDocument(doc.id)}>Remind</button>}</div>
                     </li>
                   );})}</ul>
                 )}
@@ -387,6 +490,32 @@ export default function Onboarding() {
             </div>
           );
         })()}
+      </Modal>
+
+      <Modal
+        open={Boolean(correctionTarget)}
+        onClose={() => (onboardingId ? undefined : setCorrectionTarget(null))}
+        title="Edit candidate details"
+        subtitle={correctionTarget ? `${correctionTarget.candidate?.fullName ?? "Candidate"} · ${correctionTarget.candidate?.email ?? ""}` : undefined}
+        size="sm"
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => setCorrectionTarget(null)} disabled={Boolean(onboardingId)}>Cancel</Button>
+            <Button icon={Mail} onClick={() => void sendCorrectionLink()} loading={Boolean(onboardingId)} disabled={!correctionEmail.trim()}>Send correction link</Button>
+          </>
+        )}
+      >
+        <p className="cell-muted" style={{ marginTop: 0 }}>
+          If a detail (for example the email address) was entered incorrectly, send the candidate a secure link. They can correct their details and submit them for HR review. Once validated, add the candidate to Existing Employees again.
+        </p>
+        <Input
+          label="Email address for the link"
+          type="email"
+          required
+          value={correctionEmail}
+          onChange={(event) => setCorrectionEmail(event.target.value)}
+          placeholder="candidate@example.com"
+        />
       </Modal>
     </div>
   );

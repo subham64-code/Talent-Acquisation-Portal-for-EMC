@@ -4,9 +4,9 @@ import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { ok } from "../utils/http";
-import { authenticate, optionalAuthenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
+import { authenticate, optionalAuthenticate, requireAuth, requirePermission } from "../middleware/auth";
 import { verifyPurposeToken, signPurposeToken } from "../utils/jwt";
-import { readStoredFile } from "../storage/index";
+import { readStoredFile, STORAGE_BUCKETS } from "../storage/index";
 import { env } from "../config/env";
 import { contentDispositionFilename } from "../utils/crypto";
 
@@ -62,13 +62,14 @@ router.get(
     let ok = false;
     try {
       const decoded = verifyPurposeToken(token, "DOC_UPLOAD") as unknown as { candidateId: string };
-      if (file.ownerType === "CANDIDATE" && file.ownerId === decoded.candidateId) ok = true;
+      if (file.key.startsWith(STORAGE_BUCKETS.ONBOARDING + "/") && file.ownerType === "CANDIDATE" && file.ownerId === decoded.candidateId) ok = true;
     } catch {}
     if (!ok) throw ApiError.forbidden("Invalid or expired access token.");
     const buffer = await readStoredFile(file);
     res.setHeader("Content-Type", file.mimeType);
     res.setHeader("Content-Disposition", contentDispositionFilename(file.originalName, "inline"));
     res.setHeader("Content-Length", String(buffer.length));
+    res.setHeader("Cache-Control", "private, no-store");
     return res.send(buffer);
   }),
 );

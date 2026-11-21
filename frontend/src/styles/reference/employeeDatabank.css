@@ -897,3 +897,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Pager shown in databank table footers. */
+.databank-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}

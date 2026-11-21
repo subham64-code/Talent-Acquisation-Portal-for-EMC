@@ -1,16 +1,28 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { ArrowLeft, AlertCircle, BriefcaseBusiness, FileText, GraduationCap, History, Mail, Pencil, Phone, Trash2, UserRound, UserX } from "lucide-react";
 import PageHeader from "../../components/ref/PageHeader";
 import Button from "../../components/ref/Button";
 import Modal from "../../components/ref/Modal";
 import Badge from "../../components/ref/Badge";
-import DataTable from "../../components/DataTable";
 import EmployeeFormModal from "./databank/EmployeeFormModal";
+import CandidateAdditionalInfo from "../../components/ref/CandidateAdditionalInfo";
 import CVInfo from "./databank/CVInfo";
 import { formatDate, formatDateTime, initials, employeeStatusMeta, EmptyStateBlock } from "./databank/shared";
 import { hrApi } from "../../lib/api";
 import { useApiQuery, useInvalidate } from "../../hooks/useApiQuery";
+
+const renderDetailValue = (value: ReactNode): ReactNode => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
+  try {
+    JSON.parse(trimmed);
+    return <CandidateAdditionalInfo value={trimmed} compact />;
+  } catch {
+    return value;
+  }
+};
 
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>();
@@ -21,11 +33,36 @@ export default function EmployeeProfile() {
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewName, setPreviewName] = useState("Document");
 
   const { data: employee, isLoading } = useApiQuery<any>(
     ["employee", id],
     () => hrApi.employee(String(id)).then((r: any) => r?.data?.item),
   );
+
+  const openDocument = async (fileId?: string, name = "Document") => {
+    if (!fileId) return;
+    try {
+      if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+      const r = await hrApi.fileAccessToken(fileId);
+      const token = r?.data?.token;
+      if (token) {
+        const blobRes = await hrApi.file(fileId, token);
+        setPreviewUrl(URL.createObjectURL(blobRes.data as Blob));
+      } else if (r?.data?.url) {
+        setPreviewUrl(r.data.url);
+      }
+      setPreviewName(name);
+    } catch {
+      setError("Could not open the document.");
+    }
+  };
+
+  const closePreview = () => {
+    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+  };
 
   const { data: departments = [] } = useApiQuery<any[]>(
     ["departments", "dropdown"],
@@ -153,6 +190,31 @@ export default function EmployeeProfile() {
     },
   ];
 
+  const extra = (() => {
+    if (!employee.additionalInfo) return null;
+    try {
+      const parsed = JSON.parse(employee.additionalInfo);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  })();
+  if (extra) {
+    sections.push({
+      id: "application",
+      title: "Additional Information (from application)",
+      icon: "user",
+      items: [
+        ["Address", extra.currentAddress ?? extra.address ?? employee.workLocation ?? null],
+        ["Date of Birth", extra.dateOfBirth ? formatDate(extra.dateOfBirth) : null],
+        ["Gender", extra.gender ?? null],
+        ["Notice Period", extra.noticePeriod ?? null],
+        ["Expected Salary", extra.expectedSalary ?? null],
+        ["Work Specialization", extra.workSpecialization ?? null],
+      ] as Array<[string, React.ReactNode?, boolean?]>,
+    });
+  }
+
   return (
     <div className="page">
       <Link className="back-link" to={backTarget}><ArrowLeft size={16} aria-hidden="true" /> Back to {employee.status === "FORMER" ? "Former Employees" : "Current Employees"}</Link>
@@ -166,7 +228,11 @@ export default function EmployeeProfile() {
         subtitle={`${employee.designation?.name || "—"} · ${employee.department?.name || "—"}`}
         actions={(
           <>
-            <Button variant="outline" icon={Pencil} onClick={() => setEditOpen(true)}>Edit Employee</Button>
+            {employee.locked ? (
+              <span className="notice notice--info" style={{ margin: 0 }}><div className="notice__body" style={{ padding: "0.35rem 0.6rem" }}><div className="notice__title" style={{ fontSize: "0.72rem" }}>Record locked</div>Confirmed from the employee's validated submission.</div></span>
+            ) : (
+              <Button variant="outline" icon={Pencil} onClick={() => setEditOpen(true)}>Edit Employee</Button>
+            )}
             <Button variant="danger" icon={Trash2} onClick={() => setDeleteOpen(true)}>Delete</Button>
           </>
         )}
@@ -209,11 +275,11 @@ export default function EmployeeProfile() {
                     <h4 className="detail-section__title"><Icon size={16} aria-hidden="true" /> {section.title}</h4>
                     <div className="detail-grid">
                       {section.items.map(([label, value, full]) => {
-                        const display = value === undefined || value === null || value === "" ? "—" : String(value);
+                        const empty = value === undefined || value === null || value === "";
                         return (
                           <div className={`detail-item${full ? " detail-item--full" : ""}`} key={label}>
                             <div className="detail-item__label">{label}</div>
-                            <div className={`detail-item__value${display === "—" ? " detail-item__value--muted" : ""}`}>{display}</div>
+                            <div className={`detail-item__value${empty ? " detail-item__value--muted" : ""}`}>{empty ? "—" : renderDetailValue(value)}</div>
                           </div>
                         );
                       })}
@@ -226,6 +292,22 @@ export default function EmployeeProfile() {
               <div className="detail-section">
                 <div className="detail-section__title">Skills</div>
                 <div className="flex flex-wrap gap-2">{employee.skills.map((record: any) => <Badge key={record.id} variant="blue">{record.skill?.name || "Skill"}</Badge>)}</div>
+              </div>
+            )}
+            {Array.isArray(employee.documents) && employee.documents.length > 0 && (
+              <div className="detail-section">
+                <div className="detail-section__title"><FileText size={16} aria-hidden="true" /> Uploaded Documents <span className="cell-muted">(in certificate order)</span></div>
+                <ul className="ta-detail-list">
+                  {employee.documents.map((doc: any) => (
+                    <li className="ta-detail-list__item" key={doc.id}>
+                      <div className="ta-detail-list__title">{doc.category?.name || "Document"}{doc.category?.isRequired && <span className="cell-muted"> · Required</span>}</div>
+                      <div className="ta-detail-list__meta"><Badge variant={doc.status === "ACCEPTED" ? "green" : doc.status === "REJECTED" ? "red" : "orange"} dot>{String(doc.status || "NOT_UPLOADED").replace(/_/g, " ")}</Badge>{doc.uploadedAt ? ` · Uploaded ${formatDate(doc.uploadedAt)}` : ""}</div>
+                      <div className="doc-row-actions">
+                        {doc.fileId && <button type="button" className="ta-link" onClick={() => void openDocument(doc.fileId, doc.category?.name)}>View</button>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -272,6 +354,18 @@ export default function EmployeeProfile() {
         onSubmit={save}
         submitLabel="Save Changes"
       />
+
+      <Modal
+        open={Boolean(previewUrl)}
+        onClose={closePreview}
+        title={previewName}
+        size="lg"
+        footer={<Button variant="outline" onClick={closePreview}>Close</Button>}
+      >
+        {previewUrl && (previewUrl.startsWith("blob:") || /\.pdf(\?|$)/i.test(previewUrl)
+          ? <iframe title={previewName} src={previewUrl} style={{ width: "100%", height: 520, border: 0 }} />
+          : <img src={previewUrl} alt={previewName} style={{ maxWidth: "100%", maxHeight: 520, display: "block", margin: "0 auto" }} />)}
+      </Modal>
 
       <Modal
         open={deleteOpen}

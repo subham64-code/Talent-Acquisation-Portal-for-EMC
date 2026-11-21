@@ -143,7 +143,7 @@ router.get(
   }),
 );
 
-router.get("/pending", requirePermission("documents.view"), asyncHandler(async (req, res) => {
+router.get("/pending", requirePermission("documents.view"), asyncHandler(async (_req, res) => {
   const items = await prisma.candidateDocument.findMany({
     where: { status: { not: "ACCEPTED" } },
     orderBy: { updatedAt: "asc" },
@@ -158,7 +158,7 @@ router.get(
   requirePermission("documents.view"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
-    const item = await prisma.candidateDocument.findUnique({ where: { id }, include: { category: true, file: true, application: { include: { candidate: true } }, history: { include: { changedBy: true }, orderBy: { createdAt: "desc" } } } });
+    const item = await prisma.candidateDocument.findUnique({ where: { id }, include: { category: true, file: true, application: { include: { candidate: true } }, history: { include: { changedBy: { select: { id: true, name: true, email: true } } }, orderBy: { createdAt: "desc" } } } });
     if (!item) throw ApiError.notFound("Document not found.");
     return ok(res, { item });
   }),

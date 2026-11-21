@@ -13,7 +13,7 @@ export default function DepartmentPeoplePanel({ department, onClear }: {
   const { data: applications = [], isLoading, error } = useApiQuery<any[]>(
     ["applications", "department-panel", department?.id],
     () => department
-      ? hrApi.applications({ page: 1, pageSize: 500, departmentId: department.id }).then((r: any) => r?.data?.items ?? [])
+      ? hrApi.applications({ page: 1, pageSize: 100, departmentId: department.id, full: 1 }).then((r: any) => r?.data?.items ?? [])
       : Promise.resolve<any[]>([]),
   );
 

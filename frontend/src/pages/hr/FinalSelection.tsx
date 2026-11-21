@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2, Eye, RefreshCw, Search, Send } from "lucide-react";
 import { hrApi } from "../../lib/api";
@@ -35,18 +35,22 @@ export default function FinalSelection() {
   const [remarkError, setRemarkError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [positionId, setPositionId] = useState("");
+  const [positions, setPositions] = useState<any[]>([]);
   const [error, setError] = useState("");
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [completed, selected, interviewList] = await Promise.all([
-        hrApi.applications({ page: 1, pageSize: 100, status: "INTERVIEW_COMPLETED" }).then((r: any) => r?.data?.items ?? []),
-        hrApi.applications({ page: 1, pageSize: 100, status: "SELECTED" }).then((r: any) => r?.data?.items ?? []),
-        hrApi.interviews({ page: 1, pageSize: 200 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+      const [completed, selected, interviewList, openings] = await Promise.all([
+        hrApi.applications({ page: 1, pageSize: 100, status: "INTERVIEW_COMPLETED", jobOpeningId: positionId || undefined }).then((r: any) => r?.data?.items ?? []),
+        hrApi.applications({ page: 1, pageSize: 100, status: "SELECTED", jobOpeningId: positionId || undefined }).then((r: any) => r?.data?.items ?? []),
+        hrApi.interviews({ page: 1, pageSize: 200, jobOpeningId: positionId || undefined }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+        hrApi.openings({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
       ]);
       setItems([...completed, ...selected]);
       setInterviews(Array.isArray(interviewList) ? interviewList : []);
+      setPositions(Array.isArray(openings) ? openings : []);
       setError("");
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not load final selection candidates.");
@@ -57,20 +61,18 @@ export default function FinalSelection() {
 
   useEffect(() => { void load(); }, []);
 
-  const avgRating = (application: any) => {
+  const latestResult = (application: any) => {
     const list = interviews.filter((item: any) => item.applicationId === application.id || item.application?.id === application.id);
-    const rated = list.filter((item: any) => Number.isFinite(Number(item.feedback?.[0]?.score != null ? item.feedback[0].score : item.feedback?.score)));
-    if (!rated.length) return null;
-    const total = rated.reduce((sum: number, item: any) => {
-      const raw = item.feedback?.[0]?.score ?? item.feedback?.score ?? 0;
-      return sum + Number(raw) / 20; // convert 0–100 stored score to 0–5
-    }, 0);
-    return (total / rated.length).toFixed(1);
+    const withOutcome = list.filter((item: any) => {
+      const fb = Array.isArray(item.feedback) ? item.feedback[item.feedback.length - 1] : item.feedback;
+      return fb && (fb.result || fb.recommendation);
+    });
+    return withOutcome.length || null;
   };
 
   const candidates = items.map((application: any) => {
     const list = interviews.filter((item: any) => item.applicationId === application.id || item.application?.id === application.id);
-    return { ...application, _interviews: list, _avg: avgRating(application) };
+    return { ...application, _interviews: list, _results: latestResult(application) };
   });
 
   const counts = {
@@ -80,7 +82,7 @@ export default function FinalSelection() {
   };
 
   const needle = search.trim().toLowerCase();
-  const visible = candidates.filter((item: any) => !needle || [item.applicationCode, item.candidate?.fullName, item.candidate?.email, item.jobOpening?.title].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle)));
+  const visible = candidates.filter((item: any) => (!positionId || item.jobOpeningId === positionId) && (!needle || [item.applicationCode, item.candidate?.fullName, item.candidate?.email, item.jobOpening?.title].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle))));
 
   const openReview = (entry: any) => {
     setReview(entry);
@@ -94,6 +96,8 @@ export default function FinalSelection() {
 
   const submitDecision = async (submit = false) => {
     if (!review) return;
+    const currentIndex = visible.findIndex((item) => item.id === review.id);
+    const nextCandidate = currentIndex >= 0 ? visible[currentIndex + 1] : undefined;
     const text = remarks.trim();
     const salary = offeredSalary.trim();
     const expected = expectedSalary.trim();
@@ -121,13 +125,17 @@ export default function FinalSelection() {
       const status: Decision = submit ? "SELECTED" : decision;
       await hrApi.applicationStatus(review.id, { status, remarks: text || "Submitted for admin approval.", finalSelectionSalary: salaryValue ?? null, finalSelectionExpectedSalary: expectedValue ?? null, finalSelectionNote: finalNote.trim() || null });
       setNotice(submit ? "Candidate submitted to the admin approval stage." : "Hiring decision recorded.");
-      setReview(null);
       setRemarks("");
       setOfferedSalary("");
       setExpectedSalary("");
       setFinalNote("");
-      await load(true);
-      if (status === "SELECTED") window.setTimeout(() => navigate("/hr/approvals"), 150);
+      if (nextCandidate && nextCandidate.id !== review.id) {
+        await Promise.all([load(true), Promise.resolve(openReview(nextCandidate))]);
+      } else {
+        await load(true);
+        setReview(null);
+        if (submit) navigate("/hr/approvals");
+      }
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not record the hiring decision.");
     } finally {
@@ -145,11 +153,11 @@ export default function FinalSelection() {
     { key: "candidate", header: "Candidate", render: (row) => <div className="cell-user"><div className="avatar">{initials(row.candidate?.fullName || "")}</div><div className="cell-user__text"><div className="cell-user__name">{row.candidate?.fullName}</div><div className="cell-user__sub">{row.applicationCode}</div></div></div> },
     { key: "position", header: "Position", render: (row) => row.jobOpening?.title || "—" },
     { key: "interviews", header: "Interviews", render: (row) => <span>{row._interviews.length} round{row._interviews.length === 1 ? "" : "s"}</span> },
-    { key: "rating", header: "Avg rating", render: (row) => row._avg ? <span className="cell-strong">{row._avg}/5</span> : <span className="cell-muted">Not rated</span> },
-    { key: "screening", header: "Screening", render: (row) => Number.isFinite(Number(row.aiMatchScore)) ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">Not scored</span> },
-    { key: "decision", header: "HR decision", render: (row) => { const meta = decisionLabel(row.status === "SELECTED" ? "SELECTED" : row.status); return <Badge variant={meta.variant} dot>{row.status === "SELECTED" ? "Submitted for approval" : meta.label}</Badge>; } },
+    { key: "results", header: "Interview results", render: (row) => row._results ? <span className="cell-strong">{row._results} recorded</span> : <span className="cell-muted">Pending</span> },
+    { key: "screening", header: "Screening", render: (row) => row.aiMatchScore != null ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">Not scored</span> },
+    { key: "decision", header: "HR decision", render: (row) => { if (row.status === "SELECTED") return row.adminApprovedAt ? <Badge variant="green" dot>Admin approved — ready for offer</Badge> : <Badge variant="blue" dot>Submitted for admin approval</Badge>; const meta = decisionLabel(row.status); return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
     { key: "decidedAt", header: "Decided on", render: (row) => <span className="cell-muted">{formatDate(row.updatedAt)}</span> },
-    { key: "actions", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><button type="button" className="btn btn--ghost btn--icon" onClick={() => openReview(row)} title="Review evaluation" aria-label="Review evaluation"><Eye size={16} /></button>{row.status === "INTERVIEW_COMPLETED" && <button type="button" className="btn btn--ghost btn--icon" onClick={() => openReview(row)} title="Open for admin approval" aria-label="Open for admin approval"><Send size={16} /></button>}{row.status === "SELECTED" && <CheckCircle2 size={16} className="ta-icon-success" aria-hidden="true" />}</div> },
+    { key: "actions", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><button type="button" className="btn btn--ghost btn--icon" onClick={() => openReview(row)} title="Review evaluation" aria-label="Review evaluation"><Eye size={16} /></button>{row.status === "INTERVIEW_COMPLETED" && <button type="button" className="btn btn--ghost btn--icon" onClick={() => openReview(row)} title="Open for admin approval" aria-label="Open for admin approval"><Send size={16} /></button>}{row.status === "SELECTED" && row.adminApprovedAt && <button type="button" className="btn btn--outline btn--icon" onClick={() => navigate(`/hr/offers?applicationId=${row.id}&ctc=${row.finalSelectionSalary ?? ""}`)} title="Send to Offer Letter" aria-label="Send to Offer Letter"><Send size={16} /></button>}{row.status === "SELECTED" && !row.adminApprovedAt && <CheckCircle2 size={16} className="ta-icon-success" aria-hidden="true" />}</div> },
   ];
 
   return (
@@ -170,7 +178,7 @@ export default function FinalSelection() {
         <div className="ta-interview-summary__item"><span className="ta-interview-summary__label">Candidates in scope</span><span className="ta-interview-summary__value">{counts.all}</span></div>
       </div>
 
-      <div className="page-toolbar"><div className="search-box"><span className="search-box__icon"><Search size={16} aria-hidden="true" /></span><input type="search" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by candidate, application ID or position" aria-label="Search the final selection list" /></div></div>
+      <div className="page-toolbar page-toolbar--row"><Select aria-label="Position" value={positionId} onChange={(event) => setPositionId(event.target.value)} options={positions.map((o: any) => ({ value: o.id, label: `${o.title} (${o.jobCode ?? ""})` }))} placeholder="All positions" /><div className="search-box"><span className="search-box__icon"><Search size={16} aria-hidden="true" /></span><input type="search" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by candidate, application ID or position" aria-label="Search the final selection list" /></div></div>
 
       <DataTable
         columns={columns}
@@ -191,20 +199,21 @@ export default function FinalSelection() {
           <>
             <span className="modal__footer-note">The HR decision is submitted to the admin approval stage separately.</span>
             <Button variant="outline" onClick={() => setReview(null)} disabled={busy}>Close</Button>
-            {review.status === "SELECTED" && <CheckCircle2 size={16} className="ta-icon-success" aria-hidden="true" />}
+            {review.status === "SELECTED" && !review.adminApprovedAt && <CheckCircle2 size={16} className="ta-icon-success" aria-hidden="true" />}
+            {review.status === "SELECTED" && Boolean(review.adminApprovedAt) && <Button onClick={() => navigate(`/hr/offers?applicationId=${review.id}&ctc=${review.finalSelectionSalary ?? ""}`)} icon={Send}>Send to Offer Letter</Button>}
             {review.status === "INTERVIEW_COMPLETED" && <Button variant="secondary" onClick={() => void submitDecision(true)} loading={busy}>Submit for Admin Approval</Button>}
             <Button onClick={() => void submitDecision(false)} loading={busy}>Record decision</Button>
           </>
         ) : undefined}
       >
         {review && (
-          <div className="ta-screening-layout">
-            <div className="ta-screening-layout__main">
-              <section className="ta-panel"><div className="ta-panel__header">Candidate evaluation</div><div className="detail-grid detail-grid--3"><div className="detail-item"><div className="detail-item__label">Position</div><div className="detail-item__value">{review.jobOpening?.title || "—"}</div></div><div className="detail-item"><div className="detail-item__label">Screening score</div><div className="detail-item__value">{Number.isFinite(Number(review.aiMatchScore)) ? `${Math.round(Number(review.aiMatchScore))}%` : "Not scored"}</div></div><div className="detail-item"><div className="detail-item__label">Average interview rating</div><div className="detail-item__value">{review._avg ? `${review._avg}/5` : "Not rated"}</div></div></div></section>
-              <section className="ta-panel"><div className="ta-panel__header">Interview feedback</div>{review._interviews.length === 0 ? <p className="detail-item__value detail-item__value--muted">No interview feedback has been recorded.</p> : <ul className="ta-detail-list">{review._interviews.map((interview: any) => (<li className="ta-detail-list__item" key={interview.id}><div className="ta-detail-list__title">{interview.round} · {interview.interviewerName || "Interviewer"}</div><div className="ta-detail-list__meta">{formatDateTime(interview.scheduledAt)}{Array.isArray(interview.feedback) && interview.feedback.length ? ` · rated ${Math.round(Number((interview.feedback[0].score ?? 0)) / 20)}/5` : " · feedback pending"}</div>{Array.isArray(interview.feedback) && interview.feedback.length > 0 && <><div className="ta-detail-list__meta">Recommendation: {String(interview.feedback[0].recommendation ?? "—").replace(/_/g, " ")}</div><p className="ta-detail-list__text">{interview.feedback[0].feedback || "—"}</p></>}</li>))}</ul>}</section>
+          <div className="ta-screening-layout ta-final-layout">
+            <div className="ta-screening-layout__main ta-final-layout__main">
+              <section className="ta-panel"><div className="ta-panel__header">Candidate evaluation</div><div className="detail-grid detail-grid--3"><div className="detail-item"><div className="detail-item__label">Position</div><div className="detail-item__value">{review.jobOpening?.title || "—"}</div></div><div className="detail-item"><div className="detail-item__label">Screening score</div><div className="detail-item__value">{review.aiMatchScore != null ? `${Math.round(Number(review.aiMatchScore))}%` : "Not scored"}</div></div><div className="detail-item"><div className="detail-item__label">Admin approval</div><div className="detail-item__value">{review.adminApprovedAt ? `Approved ${formatDate(review.adminApprovedAt)}` : "Pending admin decision"}</div></div></div></section>
+              <section className="ta-panel"><div className="ta-panel__header">Interview feedback</div>{review._interviews.length === 0 ? <p className="detail-item__value detail-item__value--muted">No interview feedback has been recorded.</p> : <ul className="ta-detail-list">{review._interviews.map((interview: any) => (<li className="ta-detail-list__item" key={interview.id}><div className="ta-detail-list__title">{interview.round} · {interview.interviewerName || "Interviewer"}</div><div className="ta-detail-list__meta">{formatDateTime(interview.scheduledAt)}</div>{Array.isArray(interview.feedback) && interview.feedback.length > 0 && <><div className="ta-detail-list__meta">Result: {String(interview.feedback[0].result ? ({ GOOD: "Good", BEST: "Best", NOT_SATISFIED: "Not satisfied" } as any)[interview.feedback[0].result] ?? interview.feedback[0].result : "—")}{interview.feedback[0].recommendation ? ` · Outcome: ${String(interview.feedback[0].recommendation).replace(/_/g, " ")}` : ""}</div><p className="ta-detail-list__text">{interview.feedback[0].feedback || "—"}</p></>}</li>))}</ul>}</section>
               <section className="ta-panel"><div className="ta-panel__header">HR decision</div><div className="form-grid"><div className="field field--full"><span className="field__label">Final recommendation</span><div className="ta-choice-row">{DECISION_OPTIONS.map((option) => <button type="button" key={option.value} className={`ta-choice ${decision === option.value ? "active" : ""}`} onClick={() => setDecision(option.value)} aria-pressed={decision === option.value}>{option.label}</button>)}</div></div><Input label="Offered salary (annual CTC)" type="number" min={0} value={offeredSalary} onChange={(event) => setOfferedSalary(event.target.value)} placeholder="e.g. 1200000" required={decision === "SELECTED"} error={remarkError} /><Input label="Candidate expected salary" type="number" min={0} value={expectedSalary} onChange={(event) => setExpectedSalary(event.target.value)} placeholder="Optional" /><div className="field field--full"><Textarea label="Final note" value={finalNote} onChange={(event) => setFinalNote(event.target.value)} placeholder="Candidate negotiation or decision note" /></div><div className="field field--full"><Textarea label="Decision remarks" required value={remarks} error={remarkError} onChange={(event) => { setRemarks(event.target.value); if (remarkError) setRemarkError(""); }} placeholder="Summarise the hiring recommendation" /></div></div></section>
             </div>
-            <aside className="ta-screening-layout__side"><div className="ta-panel"><div className="ta-panel__header">Current state</div><div className="detail-grid"><div className="detail-item"><div className="detail-item__label">Application stage</div><div className="detail-item__value"><CandidateStatusBadge status={review.status} /></div></div><div className="detail-item"><div className="detail-item__label">Decision recorded</div><div className="detail-item__value">{review.updatedAt ? formatDate(review.updatedAt) : "Not recorded"}</div></div><div className="detail-item"><div className="detail-item__label">Approval state</div><div className="detail-item__value">{review.status === "SELECTED" ? "Submitted for approval" : "Not submitted"}</div></div></div></div></aside>
+            <aside className="ta-screening-layout__side ta-final-layout__side"><div className="ta-panel"><div className="ta-panel__header">Current state</div><div className="detail-grid"><div className="detail-item"><div className="detail-item__label">Application stage</div><div className="detail-item__value"><CandidateStatusBadge status={review.status} /></div></div><div className="detail-item"><div className="detail-item__label">Decision recorded</div><div className="detail-item__value">{review.updatedAt ? formatDate(review.updatedAt) : "Not recorded"}</div></div><div className="detail-item"><div className="detail-item__label">Approval state</div><div className="detail-item__value">{review.status === "SELECTED" ? (review.adminApprovedAt ? `Admin approved ${formatDate(review.adminApprovedAt)}` : "Submitted for admin approval") : "Not submitted"}</div></div></div></div></aside>
           </div>
         )}
       </Modal>

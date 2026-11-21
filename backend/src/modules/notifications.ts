@@ -5,7 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { ok, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
-import { authenticate, requireAuth } from "../middleware/auth";
+import { authenticate } from "../middleware/auth";
 
 const router = express.Router();
 router.use(authenticate);
@@ -32,7 +32,7 @@ router.get(
     }
     if (unreadOnly) where.isRead = false;
     const [items, total] = await Promise.all([
-      prisma.notification.findMany({ where, skip, take, orderBy: { createdAt: "desc" }, include: { recipientUser: true, recipientCandidate: true } }),
+      prisma.notification.findMany({ where, skip, take, orderBy: { createdAt: "desc" }, include: { recipientUser: { select: { id: true, name: true, email: true } }, recipientCandidate: true } }),
       prisma.notification.count({ where }),
     ]);
     return ok(res, paginated(items, total, page, pageSize));

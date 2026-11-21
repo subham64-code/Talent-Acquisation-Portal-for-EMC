@@ -6,23 +6,39 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { ok, created } from "../utils/http";
 import { effectivePermissions } from "../lib/permissions";
-import { generateOtp, hashSecret, randomToken, verifySecret, verifyPassword, sha256, contentDispositionFilename } from "../utils/crypto";
-import { signAuthToken, verifyAuthToken } from "../utils/jwt";
-import { authenticate, optionalAuthenticate, requireAuth, requireHr, requirePermission, departmentScope } from "../middleware/auth";
+import { randomToken, verifySecret, verifyPassword, sha256, contentDispositionFilename } from "../utils/crypto";
+import { signAuthToken } from "../utils/jwt";
+import {
+  buildTotpUri,
+  decryptTotpSecret,
+  encryptTotpSecret,
+  generateTotpSecret,
+  qrDataUrl,
+  verifyTotpCode,
+} from "../utils/totp";
+import { authenticate, optionalAuthenticate, requireAuth, requirePermission } from "../middleware/auth";
 import { clearAuthCache, invalidateAuthSessions } from "../lib/authCache";
 import { logAudit } from "../services/audit.service";
 import { notifyUser } from "../services/notification.service";
 import { sendTemplateEmail } from "../integrations/email/email.service";
 import { storeFile, readStoredFile, STORAGE_BUCKETS } from "../storage/index";
 import { upload } from "../middleware/upload";
-import { authRateLimiter } from "../middleware/rateLimit";
+import { authRateLimiter, totpRateLimiter } from "../middleware/rateLimit";
 import { env } from "../config/env";
-import type { ApplicationStatus } from "../config/constants";
 
 const router = express.Router();
 
 const emailSchema = z.string().email().trim().toLowerCase();
 const otpCodeSchema = z.string().length(6).regex(/^\d+$/);
+
+// HR roles sign in with email + TOTP. IT_ADMIN keeps the password break-glass
+// login below and is deliberately excluded from the TOTP-only HR flow.
+const HR_TOTP_ROLES = ["SUPER_ADMIN", "HR_ADMIN", "HR_RECRUITER"];
+
+const hrUserInclude = {
+  roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
+  departments: true,
+} as const;
 
 function setSessionCookie(res: express.Response, token: string) {
   res.cookie("emc_session", token, {
@@ -44,6 +60,11 @@ function isExpired(d: Date) {
 
 function employeeLinkAvailable(invitation: { expiresAt?: Date | null }) {
   return !invitation.expiresAt || invitation.expiresAt.getTime() > Date.now();
+}
+
+/** Once HR has validated the submission, the employee can no longer change anything. */
+function employeeSubmissionLocked(invitation: { submissionStatus?: string | null; status?: string | null }) {
+  return invitation?.submissionStatus === "VALIDATED" || invitation?.status === "VALIDATED";
 }
 
 async function findEmployeeInvitationByToken(token: string) {
@@ -92,104 +113,348 @@ async function createSession(subjectType: "HR" | "CANDIDATE", subjectId: string,
   return session;
 }
 
-router.post("/auth/hr/otp/request",
-  asyncHandler(async (req, res) => {
-    const parsed = emailSchema.safeParse(req.body.email);
-    if (!parsed.success) throw ApiError.badRequest("A valid email address is required.");
-    const email = parsed.data;
+function hasHrTotpRole(user: { roles: Array<{ role: { key: string } }> }): boolean {
+  return user.roles.some((r) => HR_TOTP_ROLES.includes(r.role.key));
+}
 
-    const user = await prisma.user.findUnique({ where: { email }, include: { roles: { include: { role: true } } } });
-    if (!user || !user.isActive || !user.roles.some((r) => ["SUPER_ADMIN", "IT_ADMIN", "HR_ADMIN", "HR_RECRUITER"].includes(r.role.key))) {
-      throw ApiError.forbidden("This email is not authorized for HR access.");
-    }
+/** Only allow plain http(s) origins for generated setup links. */
+export function safeEnrollmentOrigin(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
 
-    // A fresh OTP supersedes any earlier one — invalidate first, then create.
-    // (These must stay sequential; running them concurrently lets updateMany
-    // consume the OTP created in the same request.)
-    const code = generateOtp();
-    const expiresAt = new Date(Date.now() + env.otpTtlMinutes * 60 * 1000);
-    await prisma.otpVerification.updateMany({
-      where: { email, purpose: "HR_LOGIN", consumedAt: null },
-      data: { consumedAt: new Date() },
-    });
-    await prisma.otpVerification.create({
-      data: { email, purpose: "HR_LOGIN", codeHash: hashSecret(code), expiresAt, attempts: 0, maxAttempts: env.otpMaxAttempts, ip: req.ip },
-    });
+async function finishLogin(
+  req: express.Request,
+  res: express.Response,
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    roles: Array<{ role: { key: string; permissions: Array<{ permission: { key: string } }> } }>;
+    departments: Array<{ departmentId: string }>;
+  },
+  overrides: Array<{ effect: string; permission: { key: string } }>,
+  provider: "totp" | "password",
+) {
+  const session = await createSession("HR", user.id, req);
+  const token = signAuthToken({ sub: user.id, type: "HR", sid: session.id });
+  await Promise.allSettled([
+    prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
+    logAudit(req, {
+      action: "LOGIN",
+      entityType: "User",
+      entityId: user.id,
+      actorId: user.id,
+      actorEmail: user.email,
+      metadata: { provider },
+    }),
+    notifyUser(user.id, { type: "auth.login", title: "HR portal sign-in", body: "You signed in to the HR portal." }),
+  ]);
+  setSessionCookie(res, token);
+  const roles = user.roles.map((r) => r.role.key);
+  const permissions = effectivePermissions(roles, user.roles, overrides);
+  return ok(res, {
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      type: "HR" as const,
+      roles,
+      permissions,
+      departments: user.departments.map((d) => d.departmentId),
+    },
+  });
+}
 
-    void sendTemplateEmail({
-      to: email,
-      templateKey: "hr_otp",
-      data: { name: user.name, code, expiresIn: env.otpTtlMinutes + " minutes" },
-      metadata: { purpose: "HR_LOGIN" },
-    });
+/** Issues an admin-authorized, short-lived, single-use enrollment link. */
+export async function issueTotpEnrollment(
+  userId: string,
+  createdById?: string | null,
+  knownUser?: { name: string; email: string },
+  baseUrl?: string | null,
+): Promise<{ token: string; link: string; delivered: boolean }> {
+  const user = knownUser ?? await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+  if (!user) throw ApiError.notFound("User not found.");
+  const token = randomToken(32);
+  const origin = safeEnrollmentOrigin(baseUrl) ?? safeEnrollmentOrigin(env.appUrl) ?? env.appUrl;
+  const link = `${origin.replace(/\/+$/, "")}/auth/hr/login?enrollment=${token}`;
+  await prisma.totpEnrollment.updateMany({
+    where: { userId, consumedAt: null },
+    data: { consumedAt: new Date() },
+  });
+  await prisma.totpEnrollment.create({
+    data: {
+      userId,
+      tokenHash: sha256(token),
+      expiresAt: new Date(Date.now() + env.totpEnrollmentTtlMinutes * 60 * 1000),
+      createdById: createdById ?? null,
+    },
+  });
+  const result = await sendTemplateEmail({
+    to: user.email,
+    templateKey: "hr_totp_enrollment",
+    data: {
+      name: user.name,
+      email: user.email,
+      link,
+      expiresIn: `${env.totpEnrollmentTtlMinutes} minutes`,
+    },
+    metadata: { userId },
+  });
+  return { token, link, delivered: result.status === "SENT" };
+}
 
-    return ok(res, { message: "OTP sent to your email.", expiresIn: env.otpTtlMinutes * 60 });
-  }),
-);
+async function registerTotpFailure(req: express.Request, user: { id: string; email: string; failedTotpAttempts: number }) {
+  const failed = user.failedTotpAttempts + 1;
+  const lock = failed >= env.totpMaxAttempts;
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      failedTotpAttempts: lock ? 0 : failed,
+      lockedUntil: lock ? new Date(Date.now() + env.totpLockoutMinutes * 60 * 1000) : null,
+    },
+  });
+  await logAudit(req, {
+    action: "TOTP_VERIFY_FAILED",
+    entityType: "User",
+    entityId: user.id,
+    actorEmail: user.email,
+    metadata: { reason: "invalid_or_replayed" },
+  });
+  return lock;
+}
 
-router.post("/auth/hr/otp/verify",
-  asyncHandler(async (req, res) => {
-    const body = z.object({ email: emailSchema, code: otpCodeSchema }).safeParse(req.body);
-    if (!body.success) throw ApiError.badRequest("Email and 6-digit OTP code are required.");
-    const { email, code } = body.data;
+/**
+ * Step 1 of HR sign-in. Checks eligibility using one generic error message so
+ * the endpoint cannot be used to enumerate registered accounts.
+ */
+router.post("/auth/hr/email-check", authRateLimiter, asyncHandler(async (req, res) => {
+  const parsed = emailSchema.safeParse(req.body?.email);
+  if (!parsed.success) throw ApiError.badRequest("A valid email address is required.");
+  const email = parsed.data;
 
-    const record = await prisma.otpVerification.findFirst({
-      where: { email, purpose: "HR_LOGIN", consumedAt: null },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!record) throw ApiError.notFound("No pending OTP request found for this email.");
-    if (record.attempts >= record.maxAttempts) {
-      throw ApiError.tooMany("Too many OTP attempts. Please request a new OTP.");
-    }
-    if (isExpired(record.expiresAt)) throw ApiError.badRequest("The OTP has expired. Please request a new one.");
-
-    if (!verifySecret(code, record.codeHash)) {
-      await prisma.otpVerification.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });
-      throw ApiError.unauthorized("Invalid OTP code. Please try again.");
-    }
-
-    const [, user, overrides] = await Promise.all([
-      prisma.otpVerification.update({ where: { id: record.id }, data: { consumedAt: new Date() } }),
-      prisma.user.findUnique({
-        where: { email },
-        include: {
-          roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-          departments: true,
-        },
-      }),
-      prisma.userPermissionOverride.findMany({ where: { user: { email } }, include: { permission: { select: { key: true } } } }),
-    ]);
-    if (!user || !user.isActive) throw ApiError.forbidden("Your account is not active.");
-
-    const session = await createSession("HR", user.id, req);
-    const token = signAuthToken({ sub: user.id, type: "HR", sid: session.id });
-    await Promise.allSettled([
-      prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
-      logAudit(req, {
-        action: "LOGIN",
-        entityType: "User",
-        entityId: user.id,
-        actorId: user.id,
-        actorEmail: user.email,
-        metadata: { provider: "email-otp" },
-      }),
-      notifyUser(user.id, { type: "auth.login", title: "HR portal sign-in", body: "You signed in to the HR portal." }),
-    ]);
-
-    setSessionCookie(res, token);
-    const roles = user.roles.map((r) => r.role.key);
-    const permissions = effectivePermissions(roles, user.roles, overrides);
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      email: true,
+      isActive: true,
+      totpEnabled: true,
+      totpSecretEncrypted: true,
+      roles: { select: { role: { select: { key: true } } } },
+    },
+  });
+  if (!user || !user.isActive || !hasHrTotpRole(user)) {
+    throw ApiError.forbidden("This email is not authorized for HR access.");
+  }
+  if (!user.totpEnabled || !user.totpSecretEncrypted) {
     return ok(res, {
-      token,
-      user: { id: user.id, email: user.email, name: user.name, type: "HR" as const, roles, permissions, departments: user.departments.map((d) => d.departmentId) },
+      status: "ENROLLMENT_REQUIRED",
+      email: user.email,
+      message: "Authenticator setup is required. Ask your administrator for a setup link.",
     });
-  }),
-);
+  }
+  return ok(res, { status: "TOTP_REQUIRED", email: user.email });
+}));
+
+/** Step 2: verify a 6-digit RFC 6238 code and create an authenticated session. */
+router.post("/auth/hr/totp/verify", totpRateLimiter, asyncHandler(async (req, res) => {
+  const body = z.object({ email: emailSchema, code: otpCodeSchema }).safeParse(req.body);
+  if (!body.success) throw ApiError.badRequest("Email and a 6-digit authenticator code are required.");
+  const { email, code } = body.data;
+
+  const user = await prisma.user.findUnique({ where: { email }, include: hrUserInclude });
+  if (!user || !user.isActive || !hasHrTotpRole(user)) {
+    throw ApiError.forbidden("This email is not authorized for HR access.");
+  }
+  if (!user.totpEnabled) {
+    throw ApiError.forbidden("Authenticator setup is not complete for this account.");
+  }
+  if (user.lockedUntil && !isExpired(user.lockedUntil)) {
+    throw ApiError.tooMany("Too many incorrect codes. Please try again later.");
+  }
+
+  const secret = decryptTotpSecret(user.totpSecretEncrypted);
+  if (!secret) throw ApiError.internal("Authenticator configuration is invalid. Contact your administrator.");
+
+  const result = await verifyTotpCode(code, secret, user.totpLastUsedStep == null ? null : Number(user.totpLastUsedStep));
+  if (!result.valid || result.step === undefined) {
+    const locked = await registerTotpFailure(req, user);
+    throw locked
+      ? ApiError.tooMany("Too many incorrect codes. Please try again later.")
+      : ApiError.unauthorized("Invalid or already used code. Please try again.");
+  }
+
+  // Atomic replay guard: concurrent requests with the same code both verify,
+  // but only the first transaction may advance the accepted time step.
+  const claimed = await prisma.user.updateMany({
+    where: {
+      id: user.id,
+      OR: [
+        { totpLastUsedStep: null },
+        { totpLastUsedStep: { lt: BigInt(result.step) } },
+      ],
+    },
+    data: { totpLastUsedStep: BigInt(result.step), failedTotpAttempts: 0, lockedUntil: null },
+  });
+  if (claimed.count === 0) {
+    await logAudit(req, { action: "TOTP_REPLAY_REJECTED", entityType: "User", entityId: user.id, actorEmail: user.email });
+    throw ApiError.unauthorized("This code has already been used. Wait for the next code.");
+  }
+
+  const overrides = await prisma.userPermissionOverride.findMany({
+    where: { userId: user.id },
+    include: { permission: { select: { key: true } } },
+  });
+  return finishLogin(req, res, user, overrides, "totp");
+}));
+
+/** Shows the QR code / manual key for a valid admin-issued enrollment link. */
+router.post("/auth/hr/enrollment/start", totpRateLimiter, asyncHandler(async (req, res) => {
+  const body = z.object({ token: z.string().min(20) }).safeParse(req.body);
+  if (!body.success) throw ApiError.badRequest("A valid enrollment token is required.");
+  const { token } = body.data;
+
+  const enrollment = await prisma.totpEnrollment.findUnique({ where: { tokenHash: sha256(token) } });
+  if (!enrollment || enrollment.consumedAt || isExpired(enrollment.expiresAt)) {
+    throw ApiError.unauthorized("This setup link is invalid or has expired. Ask your administrator for a new one.");
+  }
+  const user = await prisma.user.findUnique({ where: { id: enrollment.userId }, include: { roles: { include: { role: true } } } });
+  if (!user || !user.isActive || !hasHrTotpRole(user)) {
+    throw ApiError.forbidden("This email is not authorized for HR access.");
+  }
+  if (user.totpEnabled) {
+    throw ApiError.conflict("An authenticator is already active for this account.");
+  }
+
+  let secret = decryptTotpSecret(user.totpSecretEncrypted);
+  if (!secret) {
+    secret = generateTotpSecret();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        totpSecretEncrypted: encryptTotpSecret(secret),
+        totpEnrollmentPending: true,
+        totpLastUsedStep: null,
+        failedTotpAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+  }
+  const uri = buildTotpUri(user.email, secret);
+  return ok(res, {
+    status: "ENROLLMENT_PENDING",
+    email: user.email,
+    secret,
+    uri,
+    qrDataUrl: await qrDataUrl(uri),
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    expiresAt: enrollment.expiresAt,
+  });
+}));
+
+/** Confirms enrollment with a generated code, activates TOTP and signs in. */
+router.post("/auth/hr/enrollment/verify", totpRateLimiter, asyncHandler(async (req, res) => {
+  const body = z.object({ token: z.string().min(20), code: otpCodeSchema }).safeParse(req.body);
+  if (!body.success) throw ApiError.badRequest("An enrollment token and 6-digit code are required.");
+  const { token, code } = body.data;
+
+  const enrollment = await prisma.totpEnrollment.findUnique({ where: { tokenHash: sha256(token) } });
+  if (!enrollment || enrollment.consumedAt || isExpired(enrollment.expiresAt)) {
+    throw ApiError.unauthorized("This setup link is invalid or has expired. Ask your administrator for a new one.");
+  }
+  const user = await prisma.user.findUnique({ where: { id: enrollment.userId }, include: hrUserInclude });
+  if (!user || !user.isActive || !hasHrTotpRole(user)) {
+    throw ApiError.forbidden("This email is not authorized for HR access.");
+  }
+  if (user.totpEnabled) throw ApiError.conflict("An authenticator is already active for this account.");
+  if (user.lockedUntil && !isExpired(user.lockedUntil)) {
+    throw ApiError.tooMany("Too many incorrect codes. Please try again later.");
+  }
+
+  const secret = decryptTotpSecret(user.totpSecretEncrypted);
+  if (!secret) throw ApiError.badRequest("Enrollment has not been started. Please reopen your setup link.");
+
+  const result = await verifyTotpCode(code, secret);
+  if (!result.valid || result.step === undefined) {
+    const locked = await registerTotpFailure(req, user);
+    throw locked
+      ? ApiError.tooMany("Too many incorrect codes. Please try again later.")
+      : ApiError.unauthorized("That code did not match. Check your authenticator and try again.");
+  }
+
+  // Consume the single-use token atomically before enabling TOTP.
+  const consumed = await prisma.totpEnrollment.updateMany({
+    where: { id: enrollment.id, consumedAt: null, expiresAt: { gt: new Date() } },
+    data: { consumedAt: new Date() },
+  });
+  if (consumed.count === 0) {
+    throw ApiError.unauthorized("This setup link has already been used.");
+  }
+  await prisma.totpEnrollment.updateMany({
+    where: { userId: user.id, consumedAt: null },
+    data: { consumedAt: new Date() },
+  });
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      totpEnabled: true,
+      totpEnrollmentPending: false,
+      totpEnabledAt: new Date(),
+      totpLastUsedStep: BigInt(result.step),
+      failedTotpAttempts: 0,
+      lockedUntil: null,
+    },
+  });
+  await Promise.allSettled([
+    logAudit(req, { action: "TOTP_ENROLLED", entityType: "User", entityId: user.id, actorId: user.id, actorEmail: user.email }),
+    notifyUser(user.id, { type: "auth.totp_enrolled", title: "Authenticator activated", body: "TOTP sign-in is now active on your HR account." }),
+  ]);
+
+  const overrides = await prisma.userPermissionOverride.findMany({
+    where: { userId: user.id },
+    include: { permission: { select: { key: true } } },
+  });
+  return finishLogin(req, res, user, overrides, "totp");
+}));
+
+/** Session/logout aliases matching the documented HR auth API surface. */
+router.get("/auth/hr/session", optionalAuthenticate, asyncHandler(async (req, res) => {
+  if (!req.auth) return ok(res, { user: null });
+  return ok(res, {
+    user: {
+      id: req.auth.subjectId,
+      email: req.auth.email,
+      name: req.auth.name,
+      type: req.auth.type,
+      roles: req.auth.roles,
+      permissions: req.auth.permissions,
+      departments: req.auth.departments,
+    },
+  });
+}));
+
+router.post("/auth/hr/logout", authenticate, asyncHandler(async (req, res) => {
+  if (req.auth) {
+    await prisma.authSession.updateMany({ where: { id: req.auth.sessionId }, data: { revokedAt: new Date() } });
+    clearAuthCache();
+    await logAudit(req, { action: "LOGOUT", entityType: "AuthSession", entityId: req.auth.sessionId, actorId: req.auth.subjectId, actorEmail: req.auth.email });
+  }
+  clearSessionCookie(res);
+  return ok(res, { message: "Signed out." });
+}));
 
 /**
  * Password based sign-in. Reserved strictly for IT administrators as a
- * break-glass option when email delivery is blocked. Every HR role
- * (Main Controller, HR Admin, Sub HR) always signs in with an email OTP.
+ * break-glass option. All HR roles use email + TOTP only.
  */
 router.post("/auth/password/login", authRateLimiter, asyncHandler(async (req, res) => {
   const parsed = z
@@ -204,7 +469,7 @@ router.post("/auth/password/login", authRateLimiter, asyncHandler(async (req, re
   });
   if (!user || !user.isActive) throw ApiError.unauthorized("Invalid email or password.");
   if (!user.roles.some((r) => r.role.key === "IT_ADMIN")) {
-    throw ApiError.unauthorized("Password sign-in is not available for this account. Use the one-time code sent to your email.");
+    throw ApiError.unauthorized("Password sign-in is not available for this account. Use your authenticator app instead.");
   }
   if (!user.passwordHash) throw ApiError.unauthorized("Password sign-in is not enabled for this account.");
   if (!verifyPassword(password, user.passwordHash)) {
@@ -351,6 +616,7 @@ router.get(
         cv,
         status: invitation.status,
         rejection: invitation.submissionRejection ?? null,
+        locked: employeeSubmissionLocked(invitation),
         fieldReview: (invitation.submission as { fieldReview?: Array<{ key?: string; label: string; note?: string }> } | null)?.fieldReview ?? null,
       });
   }),
@@ -392,6 +658,7 @@ router.put(
     const { token } = z.object({ token: z.string().min(1) }).parse(req.params);
     const invitation = await findEmployeeInvitationByToken(token);
     if (!invitation || !employeeLinkAvailable(invitation)) throw ApiError.notFound("Invalid or expired invitation link.");
+    if (employeeSubmissionLocked(invitation)) throw ApiError.conflict("Your details have been verified by HR — they can no longer be changed.");
     const fields = draftFields.safeParse(req.body ?? {});
     if (!fields.success) throw ApiError.badRequest("Invalid draft data.", fields.error.flatten());
     await prisma.employeeUpdateInvitation.update({
@@ -437,7 +704,7 @@ router.put(
   previousOrganization: z.string().min(1),
   specialization: z.string().min(1),
   employmentTypeId: z.string().min(1),
-  joiningDate: z.coerce.date().refine((value) => value.getTime() <= Date.now(), "Joining date cannot be in the future."),
+    joiningDate: z.coerce.date().refine((value) => value.getTime() <= Date.now(), "You have already joined, please update your past joining date not a future joining date."),
   workLocation: z.string().min(1),
   additionalInfo: z.string().min(1),
 });
@@ -449,6 +716,7 @@ router.post(
     const { token } = z.object({ token: z.string().min(1) }).parse(req.params);
     const invitation = await findEmployeeInvitationByToken(token);
     if (!invitation || !employeeLinkAvailable(invitation)) throw ApiError.notFound("Invalid, used, or expired invitation link.");
+    if (employeeSubmissionLocked(invitation)) throw ApiError.conflict("Your details have been verified by HR — they can no longer be changed.");
 
     const employee = await prisma.employee.findUnique({ where: { id: invitation.employeeId } });
     if (!employee) throw ApiError.notFound("Employee record not found.");

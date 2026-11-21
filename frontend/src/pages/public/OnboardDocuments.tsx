@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { api } from "../../lib/api";
+import { careerSiteUrl } from "../../lib/appLinks";
 import Logo from "../../components/Logo";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -24,7 +25,7 @@ export default function OnboardDocuments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState<Record<string, number>>({});
-  const [doneIds, setDoneIds] = useState<Record<string, string>>({});
+  const [, setDoneIds] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     if (!token) { setError("No document upload token provided. Please use the link from your email."); setLoading(false); return; }
@@ -73,7 +74,7 @@ export default function OnboardDocuments() {
         <p className="text-4xl mb-4">🔒</p>
         <h1 className="text-lg font-bold ink-body mb-2">Link not valid</h1>
         <p className="ink-soft text-sm">{error}</p>
-        <Link to="/career" className="btn-primary mt-5 inline-flex">Back to Careers</Link>
+        <a href={careerSiteUrl} className="btn-primary mt-5 inline-flex">Back to Careers</a>
       </div>
     </div>
   );

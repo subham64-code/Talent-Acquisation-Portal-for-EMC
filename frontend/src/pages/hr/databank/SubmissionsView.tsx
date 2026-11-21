@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarClock, CheckCircle2, Download, Eye, ExternalLink, FileText, Mail, Undo2, XCircle } from "lucide-react";
 import DataTable, { type Column } from "../../../components/DataTable";
@@ -91,7 +91,7 @@ export default function SubmissionsView({ departments, designations, employmentT
   );
 
   const pendingCount = submissions.filter((submission: any) => submission.status === "PENDING").length;
-  const filtered = submissions.filter((submission: any) => !status || submission.status === status);
+  const filtered = submissions;
 
   useEffect(() => {
     if (!review?.id) {

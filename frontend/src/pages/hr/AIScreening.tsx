@@ -4,9 +4,7 @@ import {
   Bot,
   CheckCircle2,
   ClipboardCheck,
-  Download,
   Eye,
-  FileSearch,
   Inbox,
   ListFilter,
   PauseCircle,
@@ -28,12 +26,13 @@ import CandidateStatusBadge from "../../components/ref/CandidateStatusBadge";
 import EmptyState from "../../components/ref/EmptyState";
 import DataTable, { type Column } from "../../components/DataTable";
 import { Select, Textarea } from "../../components/ref/Input";
-import { initials, formatDate, formatDateTime } from "./databank/shared";
+import { initials, formatDate } from "./databank/shared";
 
 const STATE_OPTIONS = [
-  { value: "pending", label: "Awaiting AI Result" },
+  { value: "pending", label: "Pending" },
   { value: "processing", label: "Processing" },
-  { value: "completed", label: "AI Completed" },
+  { value: "completed", label: "Evaluated" },
+  { value: "failed", label: "Failed" },
 ];
 
 const DECISION_OPTIONS = [
@@ -60,21 +59,36 @@ export default function AIScreening() {
   const [hrDecisionFilter, setHrDecisionFilter] = useState("");
   const [review, setReview] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [, setDetailLoading] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [remarkError, setRemarkError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewing, setPreviewing] = useState(false);
   const [runOpen, setRunOpen] = useState(false);
   const [selectedOpening, setSelectedOpening] = useState("");
   const [running, setRunning] = useState(false);
+  const [jobProgress, setJobProgress] = useState<{ total: number; processed: number; status: string } | null>(null);
   const [kpi, setKpi] = useState<string | null>(null);
-  const [kpiLoading, setKpiLoading] = useState(false);
 
-  const aiEvaluation = (item?: any | null) => (Number.isFinite(Number(item?.aiMatchScore)) ? "completed" : "pending");
+  const hasScore = (item?: any | null) => item?.aiMatchScore !== null && item?.aiMatchScore !== undefined && Number.isFinite(Number(item.aiMatchScore));
+  // Persisted status is authoritative. `aiMatchScore` remains as a fallback for
+  // rows screened before the status column existed.
+  const aiEvaluation = (item?: any | null): "pending" | "processing" | "completed" | "failed" => {
+    const state = String(item?.screeningStatus ?? "").toLowerCase();
+    if (state === "processing") return "processing";
+    if (state === "failed") return "failed";
+    if (state === "evaluated" || hasScore(item)) return "completed";
+    return "pending";
+  };
+  const aiBadge = (item?: any | null) => {
+    switch (aiEvaluation(item)) {
+      case "completed": return { label: "Evaluated", variant: "green" as const };
+      case "processing": return { label: "Processing", variant: "orange" as const };
+      case "failed": return { label: "Failed", variant: "red" as const };
+      default: return { label: "Pending", variant: "grey" as const };
+    }
+  };
   const hrDecision = (item?: any | null): Decision => {
     switch (item?.status) {
       case "SHORTLISTED":
@@ -93,10 +107,8 @@ export default function AIScreening() {
     if (!silent) setLoading(true);
     try {
       const statuses = ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "ON_HOLD", "REJECTED"];
-      const lists = await Promise.all(statuses.map((status) => hrApi.applications({ page: 1, pageSize: 100, status }).then((r: any) => r?.data?.items ?? [])));
-      const byId = new Map<string, any>();
-      for (const item of lists.flat()) byId.set(item.id, item);
-      setQueue(Array.from(byId.values()));
+      const res = await hrApi.applications({ page: 1, pageSize: 100, status: statuses.join(",") });
+      setQueue(res?.data?.items ?? []);
       setError("");
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not load the screening queue.");
@@ -118,34 +130,61 @@ export default function AIScreening() {
     setRunning(true);
     setError("");
     setNotice("");
+    setJobProgress({ total: 0, processed: 0, status: "PENDING" });
     try {
       const res = await hrApi.aiRun({ jobOpeningId: selectedOpening });
-      const result = res?.data ?? res;
-      const evaluated = result?.run?.candidatesEvaluated ?? result?.candidatesEvaluated ?? "";
-      setNotice(evaluated ? `AI screening complete · ${evaluated} candidates evaluated.` : "AI screening complete.");
+      const jobId = res?.data?.jobId ?? (res as any)?.jobId;
+      if (!jobId) throw new Error("The screening job could not be started.");
+
+      // The request returns immediately. Poll the persisted job until it settles.
+      let job: any = null;
+      for (let attempt = 0; attempt < 600; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const poll = await hrApi.aiJob(jobId);
+        job = poll?.data?.job ?? (poll as any)?.job ?? poll?.data ?? poll;
+        setJobProgress({
+          total: Number(job?.total ?? 0),
+          processed: Number(job?.processed ?? 0),
+          status: String(job?.status ?? "PENDING"),
+        });
+        // Refresh the queue periodically so evaluated candidates appear as soon
+        // as they are saved, instead of waiting for the whole batch to finish.
+        if (attempt % 5 === 0) await load(true);
+        if (["COMPLETED", "FAILED"].includes(job?.status)) break;
+      }
+      if (!job) throw new Error("Could not read the screening job status.");
+      if (job.status === "FAILED") {
+        setError(job.error || "AI screening failed.");
+      } else {
+        const parts = [`${job.succeeded ?? 0} evaluated`];
+        if (job.skipped) parts.push(`${job.skipped} already evaluated`);
+        if (job.failed) parts.push(`${job.failed} failed`);
+        setNotice(`AI screening complete · ${parts.join(" · ")}.`);
+      }
       setRunOpen(false);
       await load(true);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "AI screening failed.");
+      setError(err.response?.data?.error?.message || err?.message || "AI screening failed.");
     } finally {
       setRunning(false);
+      setJobProgress(null);
     }
   };
 
   const openReview = async (entry: any) => {
-    setReview(entry);
-    setRemarks("");
-    setRemarkError("");
-    setDetail(null);
-    setDetailLoading(true);
-    try {
-      const res = await hrApi.application(entry.id);
-      setDetail(res?.data?.item ?? res?.data ?? null);
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not load the full candidate record.");
-    } finally {
-      setDetailLoading(false);
-    }
+      setReview(entry);
+      setRemarks("");
+      setRemarkError("");
+      setDetail(null);
+      setDetailLoading(true);
+      try {
+        const res = await hrApi.application(entry.id, { compact: 1 });
+        setDetail(res?.data?.item ?? res?.data ?? null);
+      } catch (err: any) {
+        setError(err.response?.data?.error?.message || "Could not load the full candidate record.");
+      } finally {
+        setDetailLoading(false);
+      }
   };
 
   useEffect(() => {
@@ -164,16 +203,32 @@ export default function AIScreening() {
   const entries = queue;
   const counts = {
     total: entries.length,
-    awaitingAi: entries.filter((item) => aiEvaluation(item) === "pending").length,
-    completedAi: entries.filter((item) => aiEvaluation(item) === "completed").length,
-    awaitingDecision: entries.filter((item) => hrDecision(item) === "awaiting_decision").length,
-    passed: entries.filter((item) => hrDecision(item) === "passed").length,
-    onHold: entries.filter((item) => hrDecision(item) === "on_hold").length,
-    rejected: entries.filter((item) => hrDecision(item) === "rejected").length,
-    open: entries.filter((item) => ["UNDER_REVIEW", "AI_RECOMMENDED"].includes(item.status)).length,
-    decided: entries.filter((item) => !["UNDER_REVIEW", "AI_RECOMMENDED"].includes(item.status)).length,
+    awaitingAi: 0,
+    processingAi: 0,
+    completedAi: 0,
+    failedAi: 0,
+    awaitingDecision: 0,
+    passed: 0,
+    onHold: 0,
+    rejected: 0,
+    open: 0,
+    decided: 0,
     all: entries.length,
   };
+  for (const item of entries) {
+    const evaluation = aiEvaluation(item);
+    if (evaluation === "pending") counts.awaitingAi += 1;
+    else if (evaluation === "processing") counts.processingAi += 1;
+    else if (evaluation === "failed") counts.failedAi += 1;
+    else counts.completedAi += 1;
+    const decision = hrDecision(item);
+    if (decision === "awaiting_decision") counts.awaitingDecision += 1;
+    else if (decision === "passed") counts.passed += 1;
+    else if (decision === "on_hold") counts.onHold += 1;
+    else if (decision === "rejected") counts.rejected += 1;
+    if (["UNDER_REVIEW", "AI_RECOMMENDED"].includes(item.status)) counts.open += 1;
+    else counts.decided += 1;
+  }
 
   const ranks = useMemo(() => {
     const map = new Map<string, number>();
@@ -185,7 +240,7 @@ export default function AIScreening() {
       groups.set(key, list);
     }
     for (const group of groups.values()) {
-      const scored = group.filter((item) => Number.isFinite(Number(item.aiMatchScore))).sort((a, b) => Number(b.aiMatchScore) - Number(a.aiMatchScore));
+      const scored = group.filter((item) => hasScore(item)).sort((a, b) => Number(b.aiMatchScore) - Number(a.aiMatchScore));
       scored.forEach((item, index) => map.set(item.id, index + 1));
     }
     return map;
@@ -205,8 +260,8 @@ export default function AIScreening() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(term));
     }).sort((a, b) => {
-      const scoreA = Number.isFinite(Number(a.aiMatchScore)) ? Number(a.aiMatchScore) : -1;
-      const scoreB = Number.isFinite(Number(b.aiMatchScore)) ? Number(b.aiMatchScore) : -1;
+      const scoreA = hasScore(a) ? Number(a.aiMatchScore) : -1;
+      const scoreB = hasScore(b) ? Number(b.aiMatchScore) : -1;
       return scoreB - scoreA || String(a.applicationCode).localeCompare(String(b.applicationCode));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,65 +270,38 @@ export default function AIScreening() {
   const activeFilterCount = [search, positionFilter, aiEvaluationFilter, hrDecisionFilter, statusFilter !== "open" ? statusFilter : ""].filter(Boolean).length;
   const clearFilters = () => { setSearch(""); setPositionFilter(""); setAiEvaluationFilter(""); setHrDecisionFilter(""); setStatusFilter("open"); };
 
-  const openFile = async (fileId?: string) => {
-    if (!fileId) return;
-    setPreviewing(true);
-    setError("");
-    try {
-      const r = await hrApi.fileAccessToken(fileId);
-      const token = r?.data?.token;
-      if (token) {
-        const blobRes = await hrApi.file(fileId, token);
-        if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(URL.createObjectURL(blobRes.data as Blob));
-      } else if (r?.data?.url) {
-        setPreviewUrl(r.data.url);
-      }
-    } catch {
-      setError("Could not open the CV.");
-    } finally {
-      setPreviewing(false);
-    }
-  };
-
-  const closePreview = () => {
-    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-  };
-
   const doDecision = async (kind: "pass" | "hold" | "reject" | "remarks") => {
     if (!review) return;
+    const currentIndex = visible.findIndex((item) => item.id === review.id);
+    const nextCandidate = currentIndex >= 0 ? visible[currentIndex + 1] : undefined;
     const text = remarks.trim();
     if (["hold", "reject"].includes(kind) && !text) {
       setRemarkError(kind === "reject" ? "Record the rejection reason before rejecting the candidate." : "Record the hold reason before placing the application on hold.");
       return;
     }
-    setBusy(true);
+    setBusyAction(kind);
     setError("");
     try {
-      if (kind === "pass") {
-        await hrApi.applicationStatus(review.id, { status: "SHORTLISTED", remarks: text || "Passed the CV screening." });
-        setNotice("Candidate passed the screening and is awaiting shortlisting.");
-      } else if (kind === "hold") {
-        await hrApi.applicationStatus(review.id, { status: "ON_HOLD", remarks: text });
-        setNotice("Application placed on hold.");
-      } else if (kind === "reject") {
-        await hrApi.applicationStatus(review.id, { status: "REJECTED", remarks: text });
-        setNotice("Application rejected at screening.");
-      } else {
-        await hrApi.applicationRemarks(review.id, { body: text });
-        setNotice("Screening remarks recorded.");
-      }
-      setReview(null);
-      setDetail(null);
+      const decisionMap: Record<string, string> = { pass: "SHORTLISTED", hold: "ON_HOLD", reject: "REJECTED", remarks: "REMARKS" };
+      await hrApi.recordScreeningDecision(review.id, {
+        decision: decisionMap[kind],
+        remarks: text || (kind === "pass" ? "Passed the CV screening." : undefined),
+      });
+      setNotice(kind === "pass" ? "Candidate passed the screening and is awaiting shortlisting." : kind === "hold" ? "Application placed on hold." : kind === "reject" ? "Application rejected at screening." : "Screening remarks recorded.");
       setRemarks("");
       setRemarkError("");
-      await load(true);
-      if (kind === "pass") navigate("/hr/shortlisting");
+      if (nextCandidate && nextCandidate.id !== review.id) {
+        await Promise.all([load(true), openReview(nextCandidate)]);
+      } else {
+        await load(true);
+        setReview(null);
+        setDetail(null);
+        if (kind === "pass") navigate("/hr/shortlisting");
+      }
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not save the screening decision.");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -281,21 +309,19 @@ export default function AIScreening() {
   const candidate = app?.candidate;
   const job = app?.jobOpening ?? app?.jobOpeningId;
   const match = (detail?.matches && detail.matches[0]) || null;
-  const aiMeta = aiEvaluation(app) === "completed" ? { label: "AI Evaluation Completed", variant: "green" as const } : { label: "Awaiting AI Result", variant: "grey" as const };
-  const aiResultMeta = match ? { label: "AI Screening Service", variant: "purple" as const } : null;
-  const scoreValue = Number.isFinite(Number(app?.aiMatchScore)) ? Math.round(Number(app.aiMatchScore)) : null;
+  const aiMeta = aiBadge(app);
+
+  const scoreValue = hasScore(app) ? Math.round(Number(app.aiMatchScore)) : null;
   const position = Array.isArray(positions) ? positions.find((item: any) => item.id === (app?.jobOpeningId || app?.jobOpening?.id)) : null;
   const requiredSkills: string[] = Array.isArray(position?.requiredSkills) ? position.requiredSkills : [];
   const candidateSkills = (candidate?.skills ?? []).map((record: any) => record.skill?.name || record.name || "").filter(Boolean);
-  const docs = [
-    app?.resumeFile ? { id: app.resumeFile.id, category: { name: "Resume", isRequired: true }, status: "ACCEPTED" } : null,
-    ...(app?.documents ?? []),
-  ].filter(Boolean) as any[];
 
   const KPI_MATCHERS: Record<string, (item: any) => boolean> = {
     total: () => true,
     "awaiting-ai": (item) => aiEvaluation(item) === "pending",
+    processing: (item) => aiEvaluation(item) === "processing",
     "ai-completed": (item) => aiEvaluation(item) === "completed",
+    failed: (item) => aiEvaluation(item) === "failed",
     "awaiting-decision": (item) => hrDecision(item) === "awaiting_decision",
     passed: (item) => hrDecision(item) === "passed",
     "on-hold": (item) => hrDecision(item) === "on_hold",
@@ -303,42 +329,39 @@ export default function AIScreening() {
   };
   const KPI_DETAILS: Record<string, { title: string; description: string }> = {
     total: { title: "Total in Screening", description: "Applications HR has moved into the CV screening queue." },
-    "awaiting-ai": { title: "Awaiting AI Evaluation", description: "Candidates without an AI screening score yet." },
-    "ai-completed": { title: "AI Evaluation Completed", description: "Candidates whose AI scores are ready for HR review." },
+    "awaiting-ai": { title: "Pending Evaluation", description: "Candidates without an AI screening result yet." },
+    processing: { title: "Processing", description: "Candidates currently being evaluated by AI screening." },
+    "ai-completed": { title: "Evaluated", description: "Candidates whose real AI scores are ready for HR review." },
+    failed: { title: "Failed", description: "Candidates whose CV could not be evaluated and need manual review." },
     "awaiting-decision": { title: "Awaiting HR Decision", description: "Candidates waiting for an HR decision after review." },
     passed: { title: "Passed", description: "Candidates moved forward to the shortlisting decision." },
     "on-hold": { title: "On Hold", description: "Applications currently placed on hold." },
     rejected: { title: "Rejected", description: "Applications rejected during screening." },
   };
-  const openKpi = async (key: string) => {
-    setKpi(key);
-    setKpiLoading(true);
-    try {
-      await load(true);
-    } finally {
-      setKpiLoading(false);
-    }
-  };
+  // KPI drill-down is derived from the data already loaded; it never retriggers
+  // the expensive full workspace fetch.
+  const openKpi = (key: string) => setKpi(key);
   const kpiEntries = useMemo(() => (kpi ? entries.filter(KPI_MATCHERS[kpi] ?? (() => false)) : []), [entries, kpi]);
 
   const statsCards = [
     { key: "total", label: "Total in Screening", value: counts.total, meta: "Explicitly transferred by HR", icon: Inbox, variant: "blue" },
-    { key: "awaiting-ai", label: "Awaiting AI Evaluation", value: counts.awaitingAi, meta: "No AI result received yet", icon: Bot, variant: "orange" },
-    { key: "ai-completed", label: "AI Evaluation Completed", value: counts.completedAi, meta: "Awaiting HR decision", icon: ShieldCheck, variant: "purple" },
-    { key: "awaiting-decision", label: "Awaiting HR Decision", value: counts.awaitingDecision, meta: "AI ranks shown, decision pending", icon: UsersRound, variant: "orange" },
-    { key: "passed", label: "Passed", value: counts.passed, meta: "Moved to shortlisting decision", icon: CheckCircle2, variant: "green" },
+    { key: "awaiting-ai", label: "Pending", value: counts.awaitingAi, meta: "Not evaluated yet", icon: Bot, variant: "orange" },
+    { key: "ai-completed", label: "Evaluated", value: counts.completedAi, meta: "Real AI score available", icon: ShieldCheck, variant: "purple" },
+    { key: "failed", label: "Failed", value: counts.failedAi, meta: "Needs manual review", icon: XCircle, variant: "red" },
+    { key: "awaiting-decision", label: "Awaiting HR Decision", value: counts.awaitingDecision, meta: "Decision pending", icon: UsersRound, variant: "orange" },
+    { key: "passed", label: "Passed", value: counts.passed, meta: "Moved to shortlisting", icon: CheckCircle2, variant: "green" },
     { key: "on-hold", label: "On Hold", value: counts.onHold, meta: "Application paused", icon: UserCheck, variant: "grey" },
     { key: "rejected", label: "Rejected", value: counts.rejected, meta: "Application closed", icon: Trash2, variant: "red" },
   ];
 
   const columns: Column<any>[] = [
-    { key: "rank", header: "Rank", className: "text-right", render: (row) => <span className="cell-strong">{Number.isFinite(ranks.get(row.id)) ? `#${ranks.get(row.id)}` : "—"}</span> },
+    { key: "rank", header: "Rank", className: "text-right", render: (row) => <span className="cell-strong">{ranks.get(row.id) ? `#${ranks.get(row.id)}` : "—"}</span> },
     { key: "candidate", header: "Candidate", render: (row) => <div className="cell-user"><div className="avatar">{initials(row.candidate?.fullName || "")}</div><div className="cell-user__text"><button type="button" className="ta-link cell-user__name" onClick={() => void openReview(row)} aria-label={`Open screening workspace for ${row.candidate?.fullName}`}>{row.candidate?.fullName}</button><div className="cell-user__sub">{row.candidate?.candidateCode || "—"}</div></div></div> },
     { key: "application", header: "Application ID", render: (row) => <span className="cell-strong">{row.applicationCode}</span> },
-    { key: "position", header: "Position", render: (row) => <div><div>{row.jobOpening?.title || "—"}</div><div className="cell-muted">{row.jobOpening?.department?.name || "—"}</div></div> },
+    { key: "position", header: "Position", render: (row) => <span>{row.jobOpening?.title || "—"}</span> },
     { key: "experience", header: "Experience", render: (row) => row.candidate?.totalExperience != null ? `${row.candidate.totalExperience} yrs` : "—" },
-    { key: "score", header: "Match Score", className: "text-right", render: (row) => Number.isFinite(Number(row.aiMatchScore)) ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">Awaiting AI Result</span> },
-    { key: "ai", header: "AI Evaluation", render: (row) => <Badge variant={aiEvaluation(row) === "completed" ? "green" : "grey"} dot>{aiEvaluation(row) === "completed" ? "AI Completed" : "Awaiting AI Result"}</Badge> },
+    { key: "score", header: "Match Score", className: "text-right", render: (row) => hasScore(row) ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">—</span> },
+    { key: "ai", header: "AI Evaluation", render: (row) => { const state = aiBadge(row); return <Badge variant={state.variant} dot>{state.label}</Badge>; } },
     { key: "decision", header: "HR Decision", render: (row) => { const decision = hrDecision(row); const meta = decision === "passed" ? { label: "Passed", variant: "green" as const } : decision === "on_hold" ? { label: "On Hold", variant: "grey" as const } : decision === "rejected" ? { label: "Rejected", variant: "red" as const } : { label: "Awaiting Review", variant: "orange" as const }; return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
     { key: "application", header: "Application", render: (row) => <CandidateStatusBadge status={row.status} /> },
     { key: "actions", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><button type="button" className="btn btn--ghost btn--icon" onClick={() => void openReview(row)} aria-label={`Open screening workspace for ${row.candidate?.fullName}`} title="Open screening workspace"><Eye size={16} /></button></div> },
@@ -351,10 +374,10 @@ export default function AIScreening() {
   const kpiColumns: Column<any>[] = [
     { key: "candidate", header: "Candidate", className: "kpi-candidate", render: (row) => <div className="cell-user"><div className="avatar">{initials(row.candidate?.fullName || "")}</div><div className="cell-user__text"><button type="button" className="ta-link cell-user__name" onClick={() => openKpiApplication(row)}>{row.candidate?.fullName}</button><div className="cell-user__sub">{row.candidate?.candidateCode || "—"}</div></div></div> },
     { key: "applicationCode", header: "Application ID", render: (row) => <span className="cell-strong">{row.applicationCode}</span> },
-    { key: "position", header: "Position", render: (row) => <div className="cell-stack"><strong>{row.jobOpening?.title || "—"}</strong><span className="cell-muted">{row.jobOpening?.department?.name || "—"}</span></div> },
+    { key: "position", header: "Position", render: (row) => <strong>{row.jobOpening?.title || "—"}</strong> },
     { key: "experience", header: "Experience", render: (row) => <span className="cell-nowrap">{row.candidate?.totalExperience != null ? `${row.candidate.totalExperience} yrs` : "—"}</span> },
-    { key: "score", header: "AI Score", className: "text-right", render: (row) => Number.isFinite(Number(row.aiMatchScore)) ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">Pending</span> },
-    { key: "ai", header: "AI Evaluation", render: (row) => <Badge variant={aiEvaluation(row) === "completed" ? "green" : "grey"} dot>{aiEvaluation(row) === "completed" ? "AI Completed" : "Awaiting AI"}</Badge> },
+    { key: "score", header: "AI Score", className: "text-right", render: (row) => hasScore(row) ? <span className="cell-strong">{Math.round(Number(row.aiMatchScore))}%</span> : <span className="cell-muted">—</span> },
+    { key: "ai", header: "AI Evaluation", render: (row) => { const state = aiBadge(row); return <Badge variant={state.variant} dot>{state.label}</Badge>; } },
     { key: "decision", header: "HR Decision", render: (row) => { const decision = hrDecision(row); const meta = decision === "passed" ? { label: "Passed", variant: "green" as const } : decision === "on_hold" ? { label: "On Hold", variant: "grey" as const } : decision === "rejected" ? { label: "Rejected", variant: "red" as const } : { label: "Awaiting", variant: "orange" as const }; return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
     { key: "status", header: "Status", render: (row) => <CandidateStatusBadge status={row.status} /> },
     { key: "actions", header: "Action", className: "text-right", render: (row) => <button type="button" className="btn btn--outline btn--sm" onClick={() => openKpiApplication(row)}><Eye size={14} aria-hidden="true" /> Details</button> },
@@ -377,10 +400,25 @@ export default function AIScreening() {
           <div className="card__body">
             <div className="grid grid-cols-1 md:grid-cols-[2fr_auto] gap-3 items-end">
               <div className="field" style={{ margin: 0 }}>
-                <Select label="Job opening" required value={selectedOpening} onChange={(event: any) => setSelectedOpening(event.target.value)} placeholder="Select a vacancy to screen…" options={positions.map((item: any) => ({ value: item.id, label: `${item.title} · ${item.department?.name || ""}` }))} />
+                <Select label="Job opening" required value={selectedOpening} onChange={(event: any) => setSelectedOpening(event.target.value)} placeholder="Select a vacancy to screen…" options={positions.map((item: any) => ({ value: item.id, label: item.title }))} />
               </div>
               <Button icon={Sparkles} onClick={runAiScreening} loading={running}>Run screening</Button>
             </div>
+            {jobProgress && (
+              <div className="screening-progress" role="status" aria-live="polite">
+                <div className="screening-progress__label">
+                  <strong>{jobProgress.status === "PROCESSING" ? "Evaluating CVs" : jobProgress.status.toLowerCase()}</strong>
+                  <span>{jobProgress.processed} of {jobProgress.total || "…"} candidates processed</span>
+                </div>
+                <div className="screening-progress__track">
+                  <div
+                    className="screening-progress__bar"
+                    style={{ width: `${jobProgress.total ? Math.min(100, (jobProgress.processed / jobProgress.total) * 100) : 0}%` }}
+                  />
+                </div>
+                <p className="screening-progress__hint">You can keep this page open — results appear as each candidate finishes.</p>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -432,7 +470,9 @@ export default function AIScreening() {
             setAiEvaluationFilter("");
             setHrDecisionFilter("");
             setStatusFilter("all");
-            if (kpi === "awaiting-ai" || kpi === "ai-completed") setAiEvaluationFilter(kpi === "awaiting-ai" ? "pending" : "completed");
+            if (["awaiting-ai", "ai-completed", "processing", "failed"].includes(kpi ?? "")) {
+              setAiEvaluationFilter(kpi === "awaiting-ai" ? "pending" : kpi === "ai-completed" ? "completed" : (kpi ?? ""));
+            }
             if (kpi === "awaiting-decision" || kpi === "passed" || kpi === "on-hold" || kpi === "rejected") setHrDecisionFilter(kpi === "on-hold" ? "on_hold" : kpi === "awaiting-decision" ? "awaiting_decision" : kpi);
             setKpi(null);
           };
@@ -444,7 +484,7 @@ export default function AIScreening() {
             columns={kpiColumns}
             rows={kpiEntries}
             rowKey={(row) => row.id}
-            loading={kpiLoading}
+            loading={false}
             empty={<EmptyState icon={Inbox} title="No candidates in this KPI" description="Matching candidates will appear here as the screening queue changes." />}
             footer={<><span><strong>{kpiEntries.length}</strong> matching candidate{kpiEntries.length === 1 ? "" : "s"}</span><span className="cell-muted">Click any candidate to open the full screening workspace</span></>}
           />
@@ -453,45 +493,42 @@ export default function AIScreening() {
 
       <Modal
         open={Boolean(review)}
-        onClose={() => (busy ? undefined : setReview(null))}
+        onClose={() => (busyAction ? undefined : setReview(null))}
         title={review ? `Screening workspace · ${review.candidate?.fullName}` : "Screening workspace"}
         subtitle={review ? `${job?.title || "Position"} · ${review.applicationCode}` : undefined}
         size="xl"
         footer={review ? (
           <>
             <Link to={`/hr/submissions/${review.id}`} className="btn btn--ghost btn--sm"><ClipboardCheck size={14} aria-hidden="true" /> Open candidate profile</Link>
-            <Button variant="outline" onClick={() => setReview(null)} disabled={busy}>Close</Button>
-            {!["SHORTLISTED", "REJECTED", "SELECTED"].includes(review.status) && <Button variant="outline" icon={PauseCircle} onClick={() => void doDecision("hold")} disabled={busy}>On Hold</Button>}
-            {!["REJECTED", "SELECTED"].includes(review.status) && <Button variant="danger-ghost" icon={XCircle} onClick={() => void doDecision("reject")} disabled={busy}>Reject</Button>}
-            {["UNDER_REVIEW", "AI_RECOMMENDED"].includes(review.status) && <Button variant="secondary" icon={CheckCircle2} onClick={() => void doDecision("pass")} loading={busy}>Passed</Button>}
-            <Button onClick={() => void doDecision("remarks")} loading={busy} disabled={!remarks.trim()}>Save Remarks</Button>
+            <Button variant="outline" onClick={() => setReview(null)} disabled={Boolean(busyAction)}>Close</Button>
+            {!["SHORTLISTED", "REJECTED", "SELECTED"].includes(review.status) && <Button variant="outline" icon={PauseCircle} onClick={() => void doDecision("hold")} disabled={Boolean(busyAction)} loading={busyAction === "hold"}>On Hold</Button>}
+            {!["REJECTED", "SELECTED"].includes(review.status) && <Button variant="danger-ghost" icon={XCircle} onClick={() => void doDecision("reject")} disabled={Boolean(busyAction)} loading={busyAction === "reject"}>Reject</Button>}
+            {["UNDER_REVIEW", "AI_RECOMMENDED"].includes(review.status) && <Button variant="secondary" icon={CheckCircle2} onClick={() => void doDecision("pass")} loading={busyAction === "pass"} disabled={Boolean(busyAction)}>Passed</Button>}
+            <Button onClick={() => void doDecision("remarks")} loading={busyAction === "remarks"} disabled={!remarks.trim() || Boolean(busyAction)}>Save Remarks</Button>
           </>
         ) : undefined}
       >
         {review && (
           <div className="ta-screening-layout">
             <div className="ta-screening-layout__main">
-              <section className="ta-panel">
+              <section className="ta-panel ta-panel--wide">
                 <div className="ta-panel__header">Candidate overview</div>
                 <div className="detail-grid detail-grid--3">
                   <div className="detail-item"><div className="detail-item__label">Candidate</div><div className="detail-item__value">{candidate?.fullName}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Candidate ID</div><div className="detail-item__value">{candidate?.candidateCode || "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Application ID</div><div className="detail-item__value">{review.applicationCode}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Position</div><div className="detail-item__value">{job?.title || "—"}</div></div>
-                  <div className="detail-item"><div className="detail-item__label">Department</div><div className="detail-item__value">{job?.department?.name || "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Experience</div><div className="detail-item__value">{candidate?.totalExperience ?? "—"} yrs</div></div>
-                  <div className="detail-item"><div className="detail-item__label">Location</div><div className="detail-item__value">{candidate?.currentLocation || "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Applied on</div><div className="detail-item__value">{formatDate(review.appliedAt)}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Application status</div><div className="detail-item__value"><CandidateStatusBadge status={review.status} /></div></div>
                   <div className="detail-item"><div className="detail-item__label">AI evaluation</div><div className="detail-item__value"><Badge variant={aiMeta.variant} dot>{aiMeta.label}</Badge></div></div>
                 </div>
               </section>
 
-              <section className="ta-panel">
+              <section className="ta-panel ta-panel--wide">
                 <div className="ta-panel__header">Job requirements</div>
                 <div className="detail-grid detail-grid--3">
                   <div className="detail-item"><div className="detail-item__label">Title</div><div className="detail-item__value">{job?.title || "—"}</div></div>
-                  <div className="detail-item"><div className="detail-item__label">Department</div><div className="detail-item__value">{job?.department?.name || "—"}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Required experience</div><div className="detail-item__value">{job?.minExperience ?? Math.floor(Number(job?.requiredYears || 0))} yrs</div></div>
                   <div className="detail-item detail-item--full"><div className="detail-item__label">Required skills</div><div className="ta-chip-list">{requiredSkills.map((skill) => <span className="ta-chip" key={skill}>{skill}</span>)}</div></div>
                   <div className="detail-item"><div className="detail-item__label">Required qualification</div><div className="detail-item__value">{job?.requiredQualification || "—"}</div></div>
@@ -506,7 +543,7 @@ export default function AIScreening() {
 
               <section className="ta-panel">
                 <div className="ta-panel__header">Experience and education</div>
-                <div className="detail-grid detail-grid--3">
+                <div className="detail-grid">
                   <div className="detail-item"><div className="detail-item__label">Required experience</div><div className="detail-item__value">{job?.minExperience ?? "0"} yrs</div></div>
                   <div className="detail-item"><div className="detail-item__label">Candidate experience</div><div className="detail-item__value">{candidate?.totalExperience ?? "—"} yrs</div></div>
                   <div className="detail-item"><div className="detail-item__label">Experience match</div><div className="detail-item__value">{Number(candidate?.totalExperience ?? 0) >= Number(job?.minExperience ?? 0) ? <Badge variant="green">Meets requirement</Badge> : <Badge variant="red">Below requirement</Badge>}</div></div>
@@ -515,41 +552,103 @@ export default function AIScreening() {
                 </div>
               </section>
 
-              <section className="ta-panel">
-                <div className="ta-panel__header"><Bot size={15} aria-hidden="true" /> AI evaluation summary</div>
+              <section className="ta-panel ta-panel--wide">
+                <div className="ta-panel__header"><Bot size={15} aria-hidden="true" /> AI evaluation — data analysis</div>
                 <div className="ta-screening-ai">
-                  {aiResultMeta && <Badge variant={aiResultMeta.variant}><Sparkles size={12} aria-hidden="true" />{aiResultMeta.label}</Badge>}
-                  <div className="detail-grid detail-grid--3" style={{ marginTop: "0.75rem" }}>
-                    <div className="detail-item"><div className="detail-item__label">Overall matching score</div><div className="detail-item__value">{scoreValue !== null ? `${scoreValue}%` : "Awaiting AI Result"}</div></div>
-                    <div className="detail-item"><div className="detail-item__label">Skills match</div><div className="detail-item__value">{match ? `${Math.round(Number(match.skillScore ?? 0))}%` : "—"}</div></div>
-                    <div className="detail-item"><div className="detail-item__label">Experience match</div><div className="detail-item__value">{match ? `${Math.round(Number(match.experienceScore ?? 0))}%` : "—"}</div></div>
-                  </div>
-                  {match ? <><p className="ta-screening-ai__summary">{match.explanation || "Score generated by the AI screening service from the candidate CV and job requirements."}</p>{Array.isArray(match.missingSkills) && match.missingSkills.length > 0 && <p className="ta-screening-ai__missing">Not covered: {match.missingSkills.join(", ")}</p>}</> : <p className="ta-screening-ai__meta">No AI result has been received for this application. The screening score stays at <strong>Awaiting AI Result</strong> until the backend screening service returns a result.</p>}
-                  {match && <p className="ta-screening-ai__meta">Matched skills: {Array.isArray(match.matchedSkills) ? match.matchedSkills.join(", ") : "—"}</p>}
+                  {match ? (() => {
+                    const isV2 = match.scoringVersion === "v2";
+                    const v2Dimensions: any[] = Array.isArray(match.dimensionScores)
+                      ? match.dimensionScores
+                      : Array.isArray(match.evidenceRecords)
+                        ? match.evidenceRecords.map((row: any) => ({ dimension: row.dimension, score: row.score, applicability: row.applicability, weight: row.weight, evidence: row.evidence, reason: row.reason }))
+                        : [];
+                    const v2Labels: Record<string, string> = {
+                      skills: "Skills match", experience: "Experience match", qualification: "Qualification match",
+                      project: "Project relevance", role: "Role relevance", certification: "Certification match",
+                    };
+                    const bars: Array<{ label: string; value: number | null }> = isV2 && v2Dimensions.length > 0
+                      ? [
+                          { label: "Overall match", value: Math.round(Number(match.overallScore ?? scoreValue ?? 0)) },
+                          ...v2Dimensions.map((item) => ({ label: v2Labels[item.dimension] ?? item.dimension, value: item.score == null ? null : Math.round(Number(item.score)) })),
+                        ]
+                      : [
+                          { label: "Overall match", value: Math.round(Number(match.overallScore ?? scoreValue ?? 0)) },
+                          { label: "Skills match", value: Math.round(Number(match.skillScore ?? 0)) },
+                          { label: "Experience match", value: Math.round(Number(match.experienceScore ?? 0)) },
+                          { label: "Qualification match", value: Math.round(Number(match.qualificationScore ?? 0)) },
+                          { label: "Domain match", value: Math.round(Number(match.domainScore ?? 0)) },
+                          { label: "Certification match", value: Math.round(Number(match.certificationScore ?? 0)) },
+                        ];
+                    const overall = bars[0].value ?? 0;
+                    const reco = isV2
+                      ? (() => {
+                          switch (match.recommendation) {
+                            case "STRONG_MATCH": return { label: "Strong match — suitable for interview", variant: "green" as const };
+                            case "GOOD_MATCH": return { label: "Good match — HR review recommended", variant: "green" as const };
+                            case "PARTIAL_MATCH": return { label: "Partial match — manual review", variant: "orange" as const };
+                            case "INSUFFICIENT_INFORMATION": return { label: "Insufficient information — manual review", variant: "grey" as const };
+                            default: return { label: "Manual review required", variant: "orange" as const };
+                          }
+                        })()
+                      : overall >= 75 ? { label: "Strong match — recommended for interview", variant: "green" as const } : overall >= 55 ? { label: "Potential match — review before shortlisting", variant: "orange" as const } : { label: "Low match — manual review", variant: "red" as const };
+                    const tone = (value: number) => (value >= 75 ? "is-good" : value >= 55 ? "is-mid" : "is-low");
+                    const matchedList = Array.isArray(match.matchedSkills) ? match.matchedSkills : [];
+                    const missingList = Array.isArray(match.missingSkills) ? match.missingSkills : [];
+                    const strengthsList = Array.isArray(match.strengths) ? match.strengths : [];
+                    const gapsList = Array.isArray(match.gaps) ? match.gaps : [];
+                    return (
+                      <>
+                        <div className="ta-analysis" role="group" aria-label="Match percentage breakdown">
+                          {bars.map((bar) => (
+                            <div className="ta-analysis__row" key={bar.label}>
+                              <span className="ta-analysis__label">{bar.label}</span>
+                              <div className="ta-analysis__track" aria-hidden="true"><span className={`ta-analysis__bar ${tone(bar.value ?? 0)}`} style={{ width: `${bar.value == null ? 0 : Math.min(100, Math.max(0, bar.value))}%` }} /></div>
+                              <span className={`ta-analysis__value ${tone(bar.value ?? 0)}`}>{bar.value == null ? "Unknown" : `${bar.value}%`}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="ta-analysis__verdict"><Badge variant={reco.variant} dot><Sparkles size={12} aria-hidden="true" />{reco.label}</Badge></div>
+                        {isV2 && (
+                          <div className="ta-analysis__evidence">
+                            <p className="ta-screening-ai__meta"><strong>Data completeness:</strong> {Math.round(Number(match.dataCompleteness ?? 0) * 100)}% · <strong>Extraction confidence:</strong> {Math.round(Number(match.extractionConfidence ?? 0) * 100)}%</p>
+                            {Array.isArray(match.missingEvidence) && match.missingEvidence.length > 0 && (
+                              <p className="ta-screening-ai__missing"><strong>Missing evidence:</strong> {match.missingEvidence.join(", ")}</p>
+                            )}
+                            {v2Dimensions.map((item) => (
+                              <div className="ta-analysis__evidence-row" key={item.dimension}>
+                                <div className="ta-analysis__evidence-head"><strong>{v2Labels[item.dimension] ?? item.dimension}</strong><span>{item.applicability === "SCORED" ? `${item.score}%` : String(item.applicability ?? "").replace("_", " ").toLowerCase()}</span></div>
+                                <p className="ta-screening-ai__meta">{item.reason}</p>
+                                {Array.isArray(item.evidence) && item.evidence.length > 0 && <ul>{item.evidence.map((text: string, index: number) => <li key={index}>{text}</li>)}</ul>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {(matchedList.length > 0 || missingList.length > 0) && (
+                          <div className="ta-analysis__skills">
+                            {matchedList.length > 0 && <p className="ta-screening-ai__meta"><strong className="text-green-700">Matched ({matchedList.length}):</strong> {matchedList.join(", ")}</p>}
+                            {missingList.length > 0 && <p className="ta-screening-ai__missing"><strong>Not covered ({missingList.length}):</strong> {missingList.join(", ")}</p>}
+                          </div>
+                        )}
+                        {strengthsList.length > 0 && <ul className="ta-analysis__list" aria-label="Strengths">{strengthsList.map((item: string) => <li key={item} className="ta-analysis__item is-good">✓ {item}</li>)}</ul>}
+                        {gapsList.length > 0 && <ul className="ta-analysis__list" aria-label="Gaps">{gapsList.map((item: string) => <li key={item} className="ta-analysis__item is-low">✕ {item}</li>)}</ul>}
+                        <p className="ta-screening-ai__summary">{match.explanation || "Score generated by the AI screening service from the candidate CV and job requirements."}</p>
+                      </>
+                    );
+                  })() : (
+                    <p className="ta-screening-ai__meta">No AI result has been received for this application yet. Run AI Screening for this opening — the score, percentage breakdown and recommendation will appear here automatically.</p>
+                  )}
                 </div>
               </section>
 
-              <section className="ta-panel"><div className="ta-panel__header">Documents</div>{docs.length === 0 ? <p className="detail-item__value detail-item__value--muted">No documents received yet.</p> : <ul className="ta-detail-list">{docs.map((doc: any) => <li className="ta-detail-list__item" key={doc.id}><div className="ta-detail-list__title">{doc.category?.name || "Document"}</div><div className="ta-detail-list__meta">{doc.status}{doc.fileId && <button type="button" className="ta-link" onClick={() => void openFile(doc.fileId)}>Preview</button>}</div></li>)}</ul>}</section>
-
-              <section className="ta-panel"><div className="ta-panel__header">HR screening remarks</div><Textarea value={remarks} onChange={(event) => { setRemarks(event.target.value); if (remarkError) setRemarkError(""); }} placeholder="Summarise the screening outcome and the reason for the decision" error={remarkError} /><p className="ta-screening-ai__meta" style={{ marginTop: "0.35rem" }}>Remarks are stored with the application. Required for On Hold and Rejected decisions.</p></section>
+              <section className="ta-panel ta-panel--wide"><div className="ta-panel__header">HR screening remarks</div><Textarea value={remarks} onChange={(event) => { setRemarks(event.target.value); if (remarkError) setRemarkError(""); }} placeholder="Summarise the screening outcome and the reason for the decision" error={remarkError} /><p className="ta-screening-ai__meta" style={{ marginTop: "0.35rem" }}>Remarks are stored with the application. Required for On Hold and Rejected decisions.</p></section>
             </div>
 
-            <aside className="ta-screening-layout__side">
-              <div className="ta-score-card"><div className="ta-score-card__label">Match score</div><div className="ta-score-card__value">{scoreValue !== null ? `${scoreValue}%` : "—"}</div><div className="ta-score-card__meta">{scoreValue !== null ? "Score returned by the screening service" : "Awaiting AI Result"}</div></div>
+              <aside className="ta-screening-layout__side">
+              <div className="ta-score-card"><div className="ta-score-card__label">Match score</div><div className="ta-score-card__value">{scoreValue !== null ? `${scoreValue}%` : "—"}</div><div className="ta-score-card__meta">{scoreValue !== null ? "Score returned by the screening service" : "Not evaluated yet"}</div></div>
               <div className="ta-panel"><div className="ta-panel__header">Application status</div><div className="detail-grid"><div className="detail-item"><div className="detail-item__label">Stage</div><div className="detail-item__value">{review.status.replace(/_/g, " ")}</div></div><div className="detail-item"><div className="detail-item__label">Source</div><div className="detail-item__value">{review.source || "Career Portal"}</div></div><div className="detail-item"><div className="detail-item__label">Applied on</div><div className="detail-item__value">{formatDate(review.appliedAt)}</div></div><div className="detail-item"><div className="detail-item__label">Screening status</div><div className="detail-item__value">{hrDecision(review).replace(/_/g, " ")}</div></div></div></div>
             </aside>
           </div>
         )}
-      </Modal>
-
-      <Modal
-        open={Boolean(previewUrl)}
-        onClose={closePreview}
-        title="Candidate CV"
-        size="lg"
-        footer={<Button icon={Download} onClick={() => previewUrl && window.open(previewUrl, "_blank", "noreferrer")} loading={previewing}>Open</Button>}
-      >
-        {previewUrl && <iframe title="Candidate CV" src={previewUrl} style={{ width: "100%", height: 520, border: 0 }} />}
       </Modal>
     </div>
   );

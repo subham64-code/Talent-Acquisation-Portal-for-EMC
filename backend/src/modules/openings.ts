@@ -10,8 +10,6 @@ import { logAudit } from "../services/audit.service";
 import { cache } from "../services/cache.service";
 import { upload } from "../middleware/upload";
 import { storeFile, STORAGE_BUCKETS } from "../storage/index";
-import { codeFromName } from "../utils/crypto";
-import { env } from "../config/env";
 
 const router = express.Router();
 router.use(authenticate, requireAuth("HR"), requireHr);
@@ -25,27 +23,37 @@ const arrayField = z.preprocess((val) => {
   return [];
 }, z.array(z.string()).default([]));
 
+const emptyToUndefined = (val: unknown) =>
+  typeof val === "string" && val.trim() === "" ? undefined : val;
+
 const openingSchema = z.object({
-  jobCode: z.string().min(2).max(30).optional(),
+  jobCode: z.preprocess(emptyToUndefined, z.string().min(2).max(30).optional()),
   title: z.string().min(2).max(160),
-  departmentId: z.string().optional().nullable(),
-  programId: z.string().optional().nullable(),
-  positions: z.coerce.number().int().nonnegative().default(1),
-  location: z.string().optional().nullable(),
-  employmentTypeId: z.string().min(1).optional().nullable(),
-  requiredQualification: z.string().optional().nullable(),
-  minExperience: z.coerce.number().nonnegative().optional().nullable(),
-  maxExperience: z.coerce.number().nonnegative().optional().nullable(),
-  relevantExperience: z.coerce.number().nonnegative().optional().nullable(),
+  departmentId: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  programId: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  positions: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
+  location: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  employmentTypeId: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  requiredQualification: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
+  minExperience: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional().nullable()),
+  maxExperience: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional().nullable()),
+  relevantExperience: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional().nullable()),
   requiredSkills: arrayField,
   preferredSkills: arrayField,
   description: z.string().min(1),
-  responsibilities: z.string().optional().nullable(),
+  responsibilities: z.preprocess(emptyToUndefined, z.string().optional().nullable()),
   requiredCertifications: arrayField,
-  startDate: z.coerce.date().optional().nullable(),
-  deadline: z.coerce.date().optional().nullable(),
-  status: z.enum(["DRAFT", "PUBLISHED", "CLOSED", "ARCHIVED"]).optional(),
+  startDate: z.preprocess(emptyToUndefined, z.coerce.date().optional().nullable()),
+  deadline: z.preprocess(emptyToUndefined, z.coerce.date().optional().nullable()),
+  status: z.preprocess(emptyToUndefined, z.enum(["DRAFT", "PUBLISHED", "CLOSED", "ARCHIVED"]).optional()),
 });
+
+const invalidInput = (parsed: { error: z.ZodError }) => {
+  const details = parsed.error.issues
+    .map((issue) => `${issue.path.join(".") || "field"}: ${issue.message}`)
+    .join("; ");
+  return ApiError.badRequest(`Invalid input — ${details}`, parsed.error.flatten());
+};
 
 router.get(
   "/",
@@ -77,7 +85,11 @@ router.get(
   }),
 );
 
-router.get("/dropdown", requirePermission("openings.view"), asyncHandler(async (req, res) => {
+router.get("/next-code", requirePermission("openings.manage"), asyncHandler(async (_req, res) => {
+  return ok(res, { jobCode: await nextJobCode() });
+}));
+
+router.get("/dropdown", requirePermission("openings.view"), asyncHandler(async (_req, res) => {
   const items = await prisma.jobOpening.findMany({ where: { status: "PUBLISHED" }, select: { id: true, jobCode: true, title: true, departmentId: true }, orderBy: { title: "asc" } });
   return ok(res, { items });
 }));
@@ -123,13 +135,30 @@ async function assertExists(model: "department" | "employmentType" | "designatio
   return record.id;
 }
 
+/**
+ * Job codes follow EMC<YYYY><MM>J<n>, e.g. EMC202611J1 for the first opening
+ * created in November 2026. The sequence resets per month.
+ */
+async function nextJobCode(): Promise<string> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `EMC${year}${month}J`;
+  const existing = await prisma.jobOpening.findMany({ where: { jobCode: { startsWith: prefix } }, select: { jobCode: true } });
+  const maxSeq = existing.reduce((max, opening) => {
+    const seq = Number.parseInt(opening.jobCode.slice(prefix.length), 10);
+    return Number.isFinite(seq) && seq > max ? seq : max;
+  }, 0);
+  return `${prefix}${maxSeq + 1}`;
+}
+
 router.post(
   "/",
   requirePermission("openings.manage"),
   upload.single("jdFile"),
   asyncHandler(async (req, res) => {
     const parsed = openingSchema.safeParse(req.body);
-    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
+    if (!parsed.success) throw invalidInput(parsed);
     const data = parsed.data;
     const departmentId = await assertExists("department", data.departmentId, "department");
     const programId = await resolveProgramId(data.programId);
@@ -139,32 +168,48 @@ router.post(
       const file = await storeFile({ buffer: req.file.buffer, originalName: req.file.originalname, mimeType: req.file.mimetype, ownerType: "JOB_OPENING", uploadedById: req.auth!.subjectId, bucket: STORAGE_BUCKETS.JOB_DESCRIPTIONS, visibility: "PRIVATE" });
       jdFileId = file.id;
     }
-    const item = await prisma.jobOpening.create({
-      data: {
-        jobCode: data.jobCode || codeFromName(data.title, "JOB"),
-        title: data.title,
-        departmentId: departmentId || undefined,
-        programId,
-        positions: data.positions,
-        location: data.location,
-        employmentTypeId,
-        requiredQualification: data.requiredQualification,
-        minExperience: data.minExperience,
-        maxExperience: data.maxExperience,
-        relevantExperience: data.relevantExperience,
-        requiredSkills: data.requiredSkills,
-        preferredSkills: data.preferredSkills,
-        description: data.description,
-        responsibilities: data.responsibilities,
-        requiredCertifications: data.requiredCertifications,
-        startDate: data.startDate,
-        deadline: data.deadline,
-        jdFileId,
-        status: data.status ?? "DRAFT",
-        createdById: req.auth!.subjectId,
-      },
-      include: { department: true, program: true, employmentType: true },
+    const createData = (jobCode: string) => ({
+      jobCode,
+      title: data.title,
+      departmentId: departmentId || undefined,
+      programId,
+      positions: data.positions,
+      location: data.location,
+      employmentTypeId,
+      requiredQualification: data.requiredQualification,
+      minExperience: data.minExperience,
+      maxExperience: data.maxExperience,
+      relevantExperience: data.relevantExperience,
+      requiredSkills: data.requiredSkills,
+      preferredSkills: data.preferredSkills,
+      description: data.description,
+      responsibilities: data.responsibilities,
+      requiredCertifications: data.requiredCertifications,
+      startDate: data.startDate,
+      deadline: data.deadline,
+      jdFileId,
+      status: data.status ?? "DRAFT",
+      publishedAt: (data.status ?? "DRAFT") === "PUBLISHED" ? new Date() : null,
+      createdById: req.auth!.subjectId,
     });
+    const createOpening = (jobCode: string) =>
+      prisma.jobOpening.create({
+        data: createData(jobCode),
+        include: { department: true, program: true, employmentType: true },
+      });
+    let jobCode = data.jobCode?.trim() || (await nextJobCode());
+    let item;
+    try {
+      item = await createOpening(jobCode);
+    } catch (err: any) {
+      // The previewed code was claimed in the meantime — fall back to a fresh code.
+      if (err?.code === "P2002") {
+        jobCode = await nextJobCode();
+        item = await createOpening(jobCode);
+      } else {
+        throw err;
+      }
+    }
     await cache.openingsChanged();
     await logAudit(req, { action: "OPENING_CREATE", entityType: "JobOpening", entityId: item.id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { title: item.title } });
     return created(res, { item });
@@ -178,7 +223,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
     const parsed = openingSchema.safeParse(req.body);
-    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
+    if (!parsed.success) throw invalidInput(parsed);
     const item = await prisma.jobOpening.findUnique({ where: { id } });
     if (!item) throw ApiError.notFound("Opening not found.");
     let jdFileId = item.jdFileId;

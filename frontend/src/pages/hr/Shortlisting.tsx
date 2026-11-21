@@ -1,22 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CalendarPlus, Eye, PauseCircle, RefreshCw, RotateCcw, Search, Trash2, UserCheck, UserRound, XCircle } from "lucide-react";
+import { CalendarPlus, PauseCircle, RefreshCw, RotateCcw, Search, UserCheck, UserRound, XCircle } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import PageHeader from "../../components/ref/PageHeader";
 import Button from "../../components/ref/Button";
 import Modal from "../../components/ref/Modal";
 import Badge from "../../components/ref/Badge";
-import CandidateStatusBadge from "../../components/ref/CandidateStatusBadge";
+
 import EmptyState from "../../components/ref/EmptyState";
 import DataTable, { type Column } from "../../components/DataTable";
-import { Textarea } from "../../components/ref/Input";
-import { initials, formatDate, formatDateTime } from "./databank/shared";
+import { Select, Textarea } from "../../components/ref/Input";
+import { initials, formatDate } from "./databank/shared";
 
-const FIELD_LICENSE = [
-  { value: "SHORTLISTED", label: "Shortlisted" },
-  { value: "ON_HOLD", label: "On Hold" },
-  { value: "REJECTED", label: "Rejected" },
-] as const;
 
 export default function Shortlisting() {
   const navigate = useNavigate();
@@ -25,10 +20,12 @@ export default function Shortlisting() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"shortlisted" | "on_hold" | "rejected" | "all">("shortlisted");
+  const [positionId, setPositionId] = useState("");
+  const [positions, setPositions] = useState<any[]>([]);
   const [actionMode, setActionMode] = useState<"hold" | "reject" | "resume" | null>(null);
   const [actionTarget, setActionTarget] = useState<any>(null);
   const [remarks, setRemarks] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -36,14 +33,14 @@ export default function Shortlisting() {
     if (!silent) setLoading(true);
     try {
       const statuses = ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "ON_HOLD", "REJECTED"];
-      const [items, appCodes] = await Promise.all([
-        Promise.all(statuses.map((status) => hrApi.applications({ page: 1, pageSize: 100, status }).then((r: any) => r?.data?.items ?? []))),
-        hrApi.interviews({ page: 1, pageSize: 200 }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+      const [items, appCodes, openings] = await Promise.all([
+        hrApi.applications({ page: 1, pageSize: 100, status: statuses.join(","), jobOpeningId: positionId || undefined }).then((r: any) => r?.data?.items ?? []),
+        hrApi.interviews({ page: 1, pageSize: 100, jobOpeningId: positionId || undefined }).then((r: any) => r?.data?.items ?? r?.data ?? []),
+        hrApi.openings({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
       ]);
-      const byId = new Map<string, any>();
-      for (const item of items.flat()) byId.set(item.id, item);
-      setQueue(Array.from(byId.values()));
+      setQueue(Array.isArray(items) ? items : []);
       setInterviews(Array.isArray(appCodes) ? appCodes : []);
+      setPositions(Array.isArray(openings) ? openings : []);
       setError("");
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not load the shortlisting queue.");
@@ -52,7 +49,9 @@ export default function Shortlisting() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  // Refetch when the selected position changes; the server applies the filter.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [positionId]);
 
   const interviewStatus = (applicationId: string) => {
     const list = interviews.filter((item: any) => item.applicationId === applicationId || item.application?.id === applicationId);
@@ -88,17 +87,18 @@ export default function Shortlisting() {
 
   const needle = search.trim().toLowerCase();
   const matchesSearch = (item: any) => !needle || [item.candidate?.fullName, item.candidate?.email, item.applicationCode, item.jobOpening?.title].filter(Boolean).some((value) => String(value).toLowerCase().includes(needle));
+  const matchesPosition = (item: any) => !positionId || item.jobOpeningId === positionId;
   const filterFor = (key: typeof statusFilter) => {
-    if (key === "shortlisted") return entries.filter((item) => item.status === "SHORTLISTED" && matchesSearch(item));
-    if (key === "on_hold") return entries.filter((item) => item.status === "ON_HOLD" && matchesSearch(item));
-    if (key === "rejected") return entries.filter((item) => item.status === "REJECTED" && matchesSearch(item));
-    return entries.filter(matchesSearch);
+    if (key === "shortlisted") return entries.filter((item) => item.status === "SHORTLISTED" && matchesPosition(item) && matchesSearch(item));
+    if (key === "on_hold") return entries.filter((item) => item.status === "ON_HOLD" && matchesPosition(item) && matchesSearch(item));
+    if (key === "rejected") return entries.filter((item) => item.status === "REJECTED" && matchesPosition(item) && matchesSearch(item));
+    return entries.filter((item) => matchesPosition(item) && matchesSearch(item));
   };
   const visible = filterFor(statusFilter);
 
-  const active = (item: any) => !["REJECTED", "SELECTED", "HIRED"].includes(item.status);
+
   const shortlist = async (item: any) => {
-    setBusy(true);
+    setBusyAction(`shortlist:${item.id}`);
     setError("");
     try {
       await hrApi.applicationStatus(item.id, { status: "SHORTLISTED", remarks: "Shortlisted after the CV screening." });
@@ -107,14 +107,14 @@ export default function Shortlisting() {
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not shortlist the candidate.");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
   const runAction = async () => {
     if (!actionTarget || !actionMode) return;
     const remark = remarks.trim();
-    setBusy(true);
+    setBusyAction(actionMode);
     setError("");
     try {
       if (actionMode === "hold") await hrApi.applicationStatus(actionTarget.id, { status: "ON_HOLD", remarks: remark || "Candidate placed on hold after screening." });
@@ -128,7 +128,7 @@ export default function Shortlisting() {
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "The action could not be completed.");
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -141,7 +141,7 @@ export default function Shortlisting() {
     { key: "screening", header: "Screening result", render: (row) => <div><div>{row.status === "AI_RECOMMENDED" ? "AI recommended" : "Passed"}</div><div className="cell-muted">{row.hrRemarks || "—"}</div></div> },
     { key: "completed", header: "Screening completed", render: (row) => <span className="cell-muted">{formatDate(row.updatedAt)}</span> },
     { key: "applied", header: "Applied", render: (row) => <span className="cell-muted">{formatDate(row.appliedAt)}</span> },
-    { key: "actions", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><Link className="btn btn--ghost btn--icon" to={`/hr/submissions/${row.id}`} title="View candidate profile" aria-label="View candidate profile"><UserRound size={16} /></Link><Link className="btn btn--ghost btn--icon" to="/hr/ai-screening" title="View screening results" aria-label="View screening results"><Eye size={16} /></Link><Button variant="outline" size="sm" icon={UserCheck} onClick={() => shortlist(row)} loading={busy} disabled={busy}>Shortlist</Button></div> },
+    { key: "actions", header: "Actions", className: "text-right", render: (row) => <div className="cell-actions"><Link className="btn btn--ghost btn--icon" to={`/hr/submissions/${row.id}`} title="View candidate profile" aria-label="View candidate profile"><UserRound size={16} /></Link><Button variant="outline" size="sm" icon={UserCheck} onClick={() => shortlist(row)} loading={busyAction === `shortlist:${row.id}`} disabled={Boolean(busyAction)}>Shortlist</Button></div> },
   ];
 
   const columns: Column<any>[] = [
@@ -167,7 +167,8 @@ export default function Shortlisting() {
       {notice && <div className="notice notice--success" role="status"><div className="notice__body">{notice}</div></div>}
       {error && <div className="notice notice--error" role="alert"><div className="notice__body">{error}</div></div>}
 
-      <div className="page-toolbar">
+      <div className="page-toolbar page-toolbar--row">
+        <Select aria-label="Position" value={positionId} onChange={(event) => setPositionId(event.target.value)} options={positions.map((o: any) => ({ value: o.id, label: `${o.title} (${o.jobCode ?? ""})` }))} placeholder="All positions" />
         <div className="search-box"><span className="search-box__icon"><Search size={16} aria-hidden="true" /></span><input type="search" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by candidate, application ID or position" aria-label="Search the shortlist" /></div>
         <div className="filters">
           <button type="button" className={`ta-filter-chip ${statusFilter === "shortlisted" ? "active" : ""}`} onClick={() => setStatusFilter("shortlisted")}>Shortlisted <span className="ta-filter-chip__count">{counts.shortlisted}</span></button>
@@ -188,11 +189,11 @@ export default function Shortlisting() {
 
       <Modal
         open={Boolean(actionMode)}
-        onClose={() => (busy ? undefined : setActionMode(null))}
+        onClose={() => (busyAction ? undefined : setActionMode(null))}
         title={actionMode === "reject" ? "Reject candidate" : actionMode === "hold" ? "Put candidate on hold" : "Resume candidate"}
         subtitle={actionTarget ? `${actionTarget.candidate?.fullName} · ${actionTarget.jobOpening?.title}` : ""}
         size="sm"
-        footer={<><Button variant="outline" onClick={() => setActionMode(null)} disabled={busy}>Cancel</Button><Button variant={actionMode === "reject" ? "danger" : "primary"} onClick={runAction} loading={busy} disabled={actionMode === "reject" && !remarks.trim()}>{actionMode === "reject" ? "Reject candidate" : actionMode === "hold" ? "Put on hold" : "Resume candidate"}</Button></>}
+        footer={<><Button variant="outline" onClick={() => setActionMode(null)} disabled={Boolean(busyAction)}>Cancel</Button><Button variant={actionMode === "reject" ? "danger" : "primary"} onClick={() => void runAction()} loading={busyAction === actionMode} disabled={(actionMode === "reject" && !remarks.trim()) || Boolean(busyAction)}>{actionMode === "reject" ? "Reject candidate" : actionMode === "hold" ? "Put on hold" : "Resume candidate"}</Button></>}
       >
         <Textarea label={actionMode === "reject" ? "Reason for rejection" : actionMode === "hold" ? "Reason for the hold" : "Reason for the resume"} required={actionMode === "reject"} value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder={actionMode === "reject" ? "Describe why the candidate is not progressing" : actionMode === "hold" ? "Explain what is blocking the shortlist" : "Explain why the candidate is back in the running"} />
       </Modal>

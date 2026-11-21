@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { authApi } from "../../lib/api";
+import { careerSiteUrl } from "../../lib/appLinks";
 import { useDebounced } from "../../hooks/useDebounced";
 import Logo from "../../components/Logo";
 
@@ -42,6 +43,7 @@ export default function EmployeeUpdate() {
   const [savedSource, setSavedSource] = useState<string | null>(null);
   const [fieldReview, setFieldReview] = useState<Array<{ key?: string; label: string; note?: string }> | null>(null);
   const [rejection, setRejection] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +51,6 @@ export default function EmployeeUpdate() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "unsaved" | "saving" | "saved">("idle");
   const hydrated = useRef(false);
   const debouncedForm = useDebounced(form, 1500);
-  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +69,7 @@ export default function EmployeeUpdate() {
         setSavedSource(r.data?.source ?? null);
         setFieldReview(r.data?.fieldReview ?? null);
         setRejection(r.data?.rejection ?? null);
+        setLocked(Boolean(r.data?.locked));
         setEmployee(employeeData);
         setStep("form");
         setForm(() => {
@@ -112,7 +114,7 @@ export default function EmployeeUpdate() {
   }, [token]);
 
   useEffect(() => {
-    if (!hydrated.current || step !== "form") return;
+    if (!hydrated.current || step !== "form" || locked) return;
     if (Object.keys(debouncedForm).length === 0) return;
     setSaveStatus("saving");
     let cancelled = false;
@@ -120,7 +122,7 @@ export default function EmployeeUpdate() {
       .then(() => { if (!cancelled) setSaveStatus("saved"); })
       .catch(() => { if (!cancelled) setSaveStatus("unsaved"); });
     return () => { cancelled = true; };
-  }, [debouncedForm, step, token]);
+  }, [debouncedForm, step, token, locked]);
 
   const clearError = (key: string) => setErrors((current) => { const next = { ...current }; delete next[key]; return next; });
 
@@ -155,6 +157,7 @@ export default function EmployeeUpdate() {
     if (!value("employmentTypeId")) next.employmentTypeId = "Select employment type.";
     if (!value("joiningDate")) next.joiningDate = "Joining date is required.";
     else if (Number.isNaN(new Date(value("joiningDate")).getTime())) next.joiningDate = "Enter a valid joining date.";
+    else if (new Date(value("joiningDate")).getTime() > Date.now()) next.joiningDate = "You have already joined, please update your past joining date not a future joining date.";
     if (!value("workLocation")) next.workLocation = "Work location is required.";
     if (!value("additionalInfo")) next.additionalInfo = "Additional information is required.";
     const cvError = validateCvFile(cvFile);
@@ -210,7 +213,7 @@ export default function EmployeeUpdate() {
         <div className="w-10 h-10 rounded-full bg-[#659616] flex items-center justify-center text-white mx-auto mb-4 font-bold">✓</div>
         <h2 className="text-xl font-bold ink-body mb-2">{error ? "Error" : "Information Submitted"}</h2>
         <p className="ink-soft mb-6">{error || (employee ? `Thank you, ${employee.fullName}. Your employee information has been submitted successfully. Our HR team will verify it before your record is updated.` : "")}</p>
-        {!error && <button className="btn-primary" onClick={() => navigate("/")}>Return to Careers</button>}
+        {!error && careerSiteUrl && <a className="btn-primary" href={careerSiteUrl}>Return to Careers</a>}
       </div>
     </div>
   );
@@ -224,6 +227,12 @@ export default function EmployeeUpdate() {
             <div className="text-xl font-bold ink-body">Employee Information Update</div>
           </div>
           <p className="ink-soft text-sm mb-6">Hello <span className="font-semibold">{employee?.fullName}</span>, please review and update your information.{saveStatus !== "idle" && <span className="ml-2 text-[11px] font-semibold align-middle">{saveStatus === "saving" ? "Saving draft…" : saveStatus === "saved" ? "Draft saved" : "Draft not saved — check your connection"}</span>}</p>
+          {locked && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+              <div className="font-semibold mb-1">Verified by HR</div>
+              Your details have been validated by the HR team and can no longer be changed. If something is incorrect, contact HR directly.
+            </div>
+          )}
           {(fieldReview?.length || rejection) && (
             <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
               <div className="font-semibold mb-1">HR requested corrections before this can be applied:</div>
@@ -291,7 +300,7 @@ export default function EmployeeUpdate() {
               </div>
             </div>
             <p className="text-xs ink-soft mt-2">{savedSource === "submission" ? "Fields reloaded from your previously submitted information." : savedSource === "draft" ? "Fields reloaded from your saved draft." : "Fields reloaded from the employee record in the database."} Your CV is stored securely and reused unless you upload a replacement.</p>
-            <button className="btn-primary w-full mt-2" disabled={loading}>{loading ? "Submitting…" : "Submit Information"}</button>
+            <button className="btn-primary w-full mt-2" disabled={loading || locked}>{locked ? "Verified — changes locked" : loading ? "Submitting…" : "Submit Information"}</button>
           </form>
           {error && <div className="mt-4 rounded bg-orange-50 p-3 text-sm text-orange-700 border border-orange-100">{error}</div>}
         </div>

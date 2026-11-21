@@ -101,7 +101,7 @@ function Qualifications({ value }: { value: unknown }) {
   );
 }
 
-export default function CandidateAdditionalInfo({ value }: { value?: string | null }) {
+export default function CandidateAdditionalInfo({ value, compact = false }: { value?: string | null; compact?: boolean }) {
   const parsed = useMemo((): UnknownRecord | string | null => {
     if (!value?.trim()) return null;
     try {
@@ -113,6 +113,7 @@ export default function CandidateAdditionalInfo({ value }: { value?: string | nu
   }, [value]);
 
   if (typeof parsed === "string") {
+    if (compact) return <p className="candidate-additional-prose">{parsed}</p>;
     return (
       <section className="candidate-additional-card">
         <div className="candidate-additional-card__header">Candidate-provided additional information</div>
@@ -131,8 +132,8 @@ export default function CandidateAdditionalInfo({ value }: { value?: string | nu
   const otherEntries = Object.entries(record).filter(([key, item]) => !knownKeys.has(key) && item !== null && item !== undefined && item !== "").map(([key, item]) => ({ key, label: humanize(key), value: asArray(item).map(formatScalar).join(", ") }));
 
   return (
-    <section className="candidate-additional-card">
-      <div className="candidate-additional-card__header">Candidate-provided additional details</div>
+    <section className={`candidate-additional-card${compact ? " candidate-additional-card--compact" : ""}`}>
+      {!compact && <div className="candidate-additional-card__header">Candidate-provided additional details</div>}
       <div className="candidate-additional-card__body">
         {personalEntries.length > 0 && (
           <div className="candidate-additional-block">

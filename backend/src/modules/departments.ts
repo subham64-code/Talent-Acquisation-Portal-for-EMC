@@ -68,25 +68,25 @@ router.post(
     const missingIds = uniqueIds.filter((employeeId) => !selected.has(employeeId));
     const working = action === "assign"
       ? employees.filter((employee) => employee.departmentId !== id)
-      : employees.filter((employee) => employee.departmentId !== null);
+      : employees.filter((employee) => employee.departmentId === id);
     const workingIds = working.map((employee) => employee.id);
 
     if (workingIds.length > 0) {
-      await prisma.$transaction([
-        prisma.employee.updateMany({
-          where: { id: { in: workingIds }, ...(action === "unassign" ? { departmentId: id } : {}) },
-          data: { departmentId: action === "assign" ? id : null },
-        }),
-        prisma.employeeDepartmentHistory.createMany({
-          data: working.map((employee) => ({
-            employeeId: employee.id,
-            fromDepartmentId: employee.departmentId,
-            toDepartmentId: action === "assign" ? id : null,
-            reason: reason || null,
-            changedById: req.auth!.subjectId,
-          })),
-        }),
-      ]);
+      // Sequential writes (not $transaction) so the Neon HTTP fallback transport,
+      // which does not support transactions, can still serve this endpoint.
+      await prisma.employee.updateMany({
+        where: { id: { in: workingIds }, ...(action === "unassign" ? { departmentId: id } : {}) },
+        data: { departmentId: action === "assign" ? id : null },
+      });
+      await prisma.employeeDepartmentHistory.createMany({
+        data: working.map((employee) => ({
+          employeeId: employee.id,
+          fromDepartmentId: employee.departmentId,
+          toDepartmentId: action === "assign" ? id : null,
+          reason: reason || null,
+          changedById: req.auth!.subjectId,
+        })),
+      });
     }
 
     if (workingIds.length > 0) await cache.peopleChanged();
@@ -158,6 +158,7 @@ router.delete(
     if (!item) throw ApiError.notFound("Department not found.");
     if (item._count.employees > 0 || item._count.jobOpenings > 0) {
       await prisma.department.update({ where: { id }, data: { isActive: false } });
+      await cache.openingsChanged();
       return ok(res, { message: "Department has records; it has been deactivated instead of deleted." });
     }
     await prisma.department.delete({ where: { id } });

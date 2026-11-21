@@ -2,7 +2,14 @@ import axios, { type AxiosInstance, type AxiosResponse } from "axios";
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || "/api/v1";
 
-export const api: AxiosInstance = axios.create({ baseURL, withCredentials: true, headers: { "Content-Type": "application/json" } });
+// No global Content-Type: Axios sets it from the payload automatically. This
+// avoids a preflight on every GET. The timeout prevents requests from hanging
+// indefinitely and leaves stale spinners on screen.
+export const api: AxiosInstance = axios.create({
+  baseURL,
+  withCredentials: true,
+  timeout: 30_000,
+});
 
 let logoutCallback: (() => void) | null = null;
 export const setLogoutCallback = (cb: () => void) => { logoutCallback = cb; };
@@ -25,14 +32,16 @@ api.interceptors.response.use(
   },
 );
 
-export interface ApiResponse<T> { success: boolean; data: T; }
-
 export const authApi = {
-  requestHrOtp: (email: string) => api.post("/auth/hr/otp/request", { email }),
-  verifyHrOtp: (email: string, code: string) => api.post("/auth/hr/otp/verify", { email, code }),
+  checkHrEmail: (email: string) => api.post("/auth/hr/email-check", { email }),
+  verifyHrTotp: (email: string, code: string) => api.post("/auth/hr/totp/verify", { email, code }),
+  startTotpEnrollment: (token: string) => api.post("/auth/hr/enrollment/start", { token }),
+  verifyTotpEnrollment: (token: string, code: string) => api.post("/auth/hr/enrollment/verify", { token, code }),
+  session: () => api.get("/auth/hr/session"),
+  // IT administrators only — HR roles sign in with email + TOTP.
   passwordLogin: (email: string, password: string) => api.post("/auth/password/login", { email, password }),
   passwordAvailable: (email: string) => api.post("/auth/password/available", { email }),
-  logout: () => api.post("/auth/logout"),
+  logout: () => api.post("/auth/hr/logout"),
   me: () => api.post("/auth/me"),
   validateEmployeeInvitation: (token: string) => api.get(`/auth/employee/invitation/${token}`),
   publicEmployeeUpdateDropdowns: () => api.get(`/career/employee-update/dropdowns`),
@@ -53,6 +62,8 @@ export const hrApi = {
   resetUser: (id: string, body?: any) => api.post(`/users/${id}/reset`, body ?? {}),
   restoreUser: (id: string) => api.post(`/users/${id}/restore`),
   setUserPassword: (id: string, password?: string | null) => api.post(`/users/${id}/password`, { password: password ?? null }),
+  resetTotp: (id: string, baseUrl?: string) => api.post(`/users/${id}/reset-totp`, { baseUrl }),
+  revokeAllSessions: (id: string) => api.post(`/users/${id}/sessions/revoke-all`),
   storageOverview: () => api.get("/storage/overview"),
   auditLogs: (params?: any) => api.get("/audit-logs", { params }),
   userAccess: (id: string) => api.get(`/users/${id}/access`),
@@ -77,7 +88,7 @@ export const hrApi = {
   resendInvitation: (id: string) => api.post(`/employees/${id}/invitations`),
   bulkInvitations: (emails: string[]) => api.post("/employees/bulk-invitations", { emails }),
   deleteEmployee: (id: string) => api.delete(`/employees/${id}`),
-  onboardEmployeeFromApplication: (applicationId: string) => api.post(`/employees/from-application/${applicationId}`, {}),
+  onboardEmployeeFromApplication: (applicationId: string, body?: any) => api.post(`/employees/from-application/${applicationId}`, body ?? {}),
   uploadEmployeeCv: (id: string, formData: FormData) => api.post(`/employees/${id}/cv`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
   removeEmployeeCv: (id: string) => api.delete(`/employees/${id}/cv`),
   employeeDropdown: () => api.get("/employees/dropdown"),
@@ -100,6 +111,7 @@ export const hrApi = {
   candidate: (id: string) => api.get(`/candidates/${id}`),
   uploadCandidateCV: (id: string, formData: FormData) => api.post(`/candidates/${id}/cv`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
   openings: (params?: any) => api.get("/openings", { params }),
+  nextJobCode: () => api.get("/openings/next-code"),
   opening: (id: string) => api.get(`/openings/${id}`),
   createOpening: (body: any, file?: File) => {
     const fd = new FormData();
@@ -120,15 +132,21 @@ export const hrApi = {
   deleteOpening: (id: string) => api.delete(`/openings/${id}`),
   openingApplications: (id: string, params?: any) => api.get("/applications", { params: { ...(params||{}), jobOpeningId: id } }),
   applications: (params?: any) => api.get("/applications", { params }),
-  application: (id: string) => api.get(`/applications/${id}`),
+  application: (id: string, params?: any) => api.get(`/applications/${id}`, { params }),
+  updateCandidate: (id: string, body: any) => api.patch(`/candidates/${id}`, body),
   applicationStatus: (id: string, body: any) => api.patch(`/applications/${id}/status`, body),
+  assignApplicationToJob: (id: string, body: any) => api.post(`/applications/${id}/assign-to-job`, body),
   saveApplicationApproval: (id: string, body: any) => api.patch(`/applications/${id}/approval`, body),
+  adminDecision: (id: string, body: any) => api.post(`/applications/${id}/admin-decision`, body),
   applicationRemarks: (id: string, body: any) => api.post(`/applications/${id}/remarks`, body),
   applicationHistory: (id: string) => api.get(`/applications/${id}/history`),
   aiRun: (body: any) => api.post("/ai-screening/run", body),
+  aiJob: (jobId: string) => api.get(`/ai-screening/jobs/${jobId}`),
+  aiJobs: (jobOpeningId: string, params?: any) => api.get(`/ai-screening/${jobOpeningId}/jobs`, { params }),
   aiRanked: (jobOpeningId: string, params?: any) => api.get(`/ai-screening/${jobOpeningId}/ranked`, { params }),
   aiMatch: (jobOpeningId: string, candidateId: string) => api.get(`/ai-screening/${jobOpeningId}/candidates/${candidateId}`),
   aiAction: (id: string, body: any) => api.post(`/ai-screening/applications/${id}/action`, body),
+  recordScreeningDecision: (id: string, body: any) => api.post(`/ai-screening/applications/${id}/decision`, body),
   aiConfig: () => api.get("/ai-screening/config"),
   interviews: (params?: any) => api.get("/interviews", { params }),
   interview: (id: string) => api.get(`/interviews/${id}`),
@@ -171,14 +189,4 @@ export const hrApi = {
   settingsWeights: () => api.get("/settings/weights"),
   updateSettingsWeights: (body: any) => api.put("/settings/weights", body),
   integrationStatus: () => api.get("/settings/integration-status"),
-  publicDepartments: () => api.get("/career/departments"),
-  publicOpenings: (params?: any) => api.get("/career/openings", { params }),
-  publicOpening: (id: string) => api.get(`/career/openings/${id}`),
-  publicApply: (formData: FormData, onProgress?: (percent: number) => void) =>
-    api.post("/career/applications", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      onUploadProgress: (e) => {
-        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
-      },
-    }),
 };

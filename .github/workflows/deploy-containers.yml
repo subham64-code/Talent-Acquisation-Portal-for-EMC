@@ -1,0 +1,56 @@
+name: Deploy EMC Talent API Container
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - deploy-cloudflare
+
+jobs:
+  deploy-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure Worker secrets
+        working-directory: container-worker
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN }}
+          TOTP_ENCRYPTION_KEY: ${{ secrets.TOTP_ENCRYPTION_KEY }}
+          TOTP_ISSUER: ${{ secrets.TOTP_ISSUER }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_REGION: ${{ secrets.S3_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_REPLY_TO: ${{ secrets.MAIL_REPLY_TO }}
+        run: |
+          for key in DATABASE_URL JWT_SECRET JWT_EXPIRES_IN TOTP_ENCRYPTION_KEY TOTP_ISSUER \
+                     S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY \
+                     SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS MAIL_FROM MAIL_REPLY_TO; do
+            value="${!key}"
+            if [ -n "$value" ]; then
+              printf '%s' "$value" | npx wrangler secret put "$key"
+            fi
+          done
+
+      - name: Deploy Worker and build container image
+        working-directory: container-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy

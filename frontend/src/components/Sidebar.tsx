@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   BadgeCheck,
   Building2,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { SECTION_PERMISSIONS, canAccess, isController } from "../lib/sectionPermissions";
+import { prefetchRoute } from "../lib/routePrefetch";
 
 interface NavItem {
   label: string;
@@ -110,6 +112,7 @@ export default function Sidebar({ open, onNavigate }: { open: boolean; onNavigat
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     workspace: true,
     databank: true,
@@ -135,15 +138,6 @@ export default function Sidebar({ open, onNavigate }: { open: boolean; onNavigat
     await logout();
     navigate("/auth/hr/login");
   };
-
-  const displayName = /^emc[\s-]+hr[\s-]+administrator$/i.test((user?.name || "").trim()) ? "HR Department" : user?.name || "HR Department";
-
-  const initials = displayName
-    .split(/\s+/)
-    .map((word) => word.charAt(0))
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <aside className={`sidebar ${open ? "open" : ""}`} aria-label="Main navigation">
@@ -183,6 +177,8 @@ export default function Sidebar({ open, onNavigate }: { open: boolean; onNavigat
                       key={item.label}
                       to={item.to}
                       onClick={onNavigate}
+                      onMouseEnter={() => prefetchRoute(item.to, queryClient)}
+                      onFocus={() => prefetchRoute(item.to, queryClient)}
                       className={`sidebar__link ${active ? "active" : ""}`}
                       aria-current={active ? "page" : undefined}
                     >
@@ -202,7 +198,7 @@ export default function Sidebar({ open, onNavigate }: { open: boolean; onNavigat
               const Icon = item.icon;
               const active = isItemActive(item, location.pathname, location.search);
               return (
-                <Link key={item.label} to={item.to} onClick={onNavigate} className={`sidebar__solo-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined}>
+                <Link key={item.label} to={item.to} onClick={onNavigate} onMouseEnter={() => prefetchRoute(item.to, queryClient)} onFocus={() => prefetchRoute(item.to, queryClient)} className={`sidebar__solo-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined}>
                   <Icon size={17} aria-hidden="true" />
                   <span>{item.label}</span>
                 </Link>
@@ -213,13 +209,7 @@ export default function Sidebar({ open, onNavigate }: { open: boolean; onNavigat
       </div>
 
       <div className="sidebar__footer">
-        <div className="sidebar__user">
-          <div className="avatar avatar--sm">{initials}</div>
-          <div>
-            <div className="sidebar__user-name">{displayName}</div>
-            <div className="sidebar__user-role">{(user?.roles || ["HR"]).join(" · ")}</div>
-          </div>
-        </div>
+   
         <button type="button" className="sidebar__logout" onClick={handleLogout}>
           <LogOut size={17} aria-hidden="true" />
           <span>Logout</span>

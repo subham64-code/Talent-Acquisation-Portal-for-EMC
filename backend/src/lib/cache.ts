@@ -1,21 +1,54 @@
 import { env } from "../config/env";
+import { prisma } from "./prisma";
 
 /**
- * In-process cache used for hot-path reads (dashboard analytics, career listings,
- * databank pages, report payloads).
+ * Fast in-process read cache with cluster-wide invalidation.
  *
- * It is deliberately dependency free and self-cleaning: entries expire after
- * their TTL and the map is capped so memory can never grow unbounded.
+ * Values stay in memory (no network hop on a cache hit). Invalidation is shared
+ * through the `cache_generations` table: each namespace has a generation number
+ * that is incremented by whichever server performs a write. Every other server
+ * re-reads the counters at most once per SYNC_INTERVAL_MS and discards local
+ * entries whose generation is behind. This avoids Redis while still preventing
+ * stale data on a multi-instance deployment.
  */
 interface Entry<T> {
   value: T;
   expiresAt: number;
+  generation: number;
 }
+
 const store = new Map<string, Entry<unknown>>();
+const localGenerations = new Map<string, number>();
 let hits = 0;
 let misses = 0;
+let lastGenerationSync = 0;
 
 const MAX_ENTRIES = 2000;
+const SYNC_INTERVAL_MS = 1500;
+
+/** `emc:dashboard:overview` and `emc:dashboard:charts` share one namespace. */
+function namespaceOf(key: string): string {
+  const parts = key.split(":");
+  return parts.length > 1 ? parts.slice(0, 2).join(":") : key;
+}
+
+async function syncGenerations(): Promise<void> {
+  const now = Date.now();
+  if (now - lastGenerationSync < SYNC_INTERVAL_MS) return;
+  lastGenerationSync = now;
+  const rows = await prisma.cacheGeneration.findMany({ select: { namespace: true, generation: true } });
+  for (const row of rows) localGenerations.set(row.namespace, row.generation);
+}
+
+/** Bump the shared counter so every replica drops this namespace. */
+async function bumpGeneration(namespace: string): Promise<void> {
+  const row = await prisma.cacheGeneration.upsert({
+    where: { namespace },
+    update: { generation: { increment: 1 } },
+    create: { namespace, generation: 1 },
+  });
+  localGenerations.set(namespace, row.generation);
+}
 
 /** Removes expired entries and enforces the size cap (LRU-ish eviction). */
 function sweep() {
@@ -35,10 +68,13 @@ function sweep() {
 
 /** Read-through cache. On a miss the loader runs and the result is stored. */
 export async function cached<T>(key: string, ttlSeconds: number, loader: () => Promise<T>): Promise<T> {
+  // A failed generation sync must never break a page; serve from local memory.
+  await syncGenerations().catch(() => undefined);
   const now = Date.now();
+  const generation = localGenerations.get(namespaceOf(key)) ?? 0;
   const entry = store.get(key) as Entry<T> | undefined;
 
-  if (entry && entry.expiresAt > now) {
+  if (entry && entry.expiresAt > now && entry.generation === generation) {
     hits++;
     // Refresh recency so hot keys survive the sweep.
     store.delete(key);
@@ -52,24 +88,32 @@ export async function cached<T>(key: string, ttlSeconds: number, loader: () => P
   const value = await loader();
 
   if (env.cacheEnabled) {
-    store.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
+    store.set(key, { value, expiresAt: now + ttlSeconds * 1000, generation });
     if (store.size > MAX_ENTRIES) sweep();
   }
 
   return value;
 }
 
-/** Removes one or more cache keys. */
+/** Removes one or more cache keys locally and invalidates them everywhere. */
 export async function invalidate(...keys: string[]): Promise<void> {
-  for (const key of keys) store.delete(key);
+  const namespaces = new Set<string>();
+  for (const key of keys) {
+    namespaces.add(namespaceOf(key));
+    for (const existing of Array.from(store.keys())) {
+      if (existing === key || existing.startsWith(`${key}:`)) store.delete(existing);
+    }
+  }
+  await Promise.all(Array.from(namespaces).map((ns) => bumpGeneration(ns).catch(() => undefined)));
 }
 
-/** Removes every key matching a prefix (a trailing "*" is allowed for glob-style calls). */
+/** Removes every key matching a prefix and invalidates that namespace everywhere. */
 export async function invalidatePattern(prefix: string): Promise<void> {
   const normalized = prefix.endsWith("*") ? prefix.slice(0, -1) : prefix;
   for (const key of Array.from(store.keys())) {
     if (key.startsWith(normalized)) store.delete(key);
   }
+  await bumpGeneration(namespaceOf(normalized)).catch(() => undefined);
 }
 
 export function cacheStats() {
@@ -96,12 +140,5 @@ export const CACHE_KEYS = {
   publicOpenings: (page: number, size: number, search: string, dept: string) =>
     `emc:career:openings:${page}:${size}:${search || "-"}:${dept || "-"}`,
   publicDepartments: () => "emc:career:departments",
-  databank: (page: number, size: number, q: string) => `emc:databank:${page}:${size}:${q || "-"}`,
-  report: (type: string, key: string) => `emc:report:${type}:${key}`,
-  notificationsUnread: (userId: string) => `emc:notifications:unread:${userId}`,
-  openingsList: (page: number, size: number, status: string, search: string) =>
-    `emc:openings:${page}:${size}:${status || "-"}:${search || "-"}`,
   applicationsList: (page: number, size: number, filters: string) => `emc:applications:${page}:${size}:${filters}`,
-  candidatesList: (page: number, size: number, q: string) => `emc:candidates:${page}:${size}:${q || "-"}`,
-  employeesList: (page: number, size: number, filters: string) => `emc:employees:${page}:${size}:${filters}`,
 };

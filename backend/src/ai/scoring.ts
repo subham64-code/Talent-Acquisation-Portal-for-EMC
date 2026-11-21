@@ -80,6 +80,7 @@ export interface ScoredMatch {
   strengths: string[];
   gaps: string[];
   explanation: string;
+  recommendation: string;
   extractionConfidence: number;
   weights: Record<string, number>;
 }
@@ -122,22 +123,22 @@ export function scoreMatch(
     skillScore = Math.round((prefMatched / preferred.length) * 100);
   } else skillScore = 60;
 
-  // Experience
+  // Experience — graded on relevant years, never a flat 0 just because a number is missing.
   let experienceScore = 70;
-  const relevant = candidate.relevantExperience ?? parsed.experienceYears ?? 0;
-  const total = candidate.totalExperience ?? 0;
+  const parsedYears = parsed.experienceYears ?? undefined;
+  const relevant = candidate.relevantExperience ?? parsedYears ?? candidate.totalExperience ?? 0;
+  const total = candidate.totalExperience ?? parsedYears ?? 0;
+  const requiredYears = job.minExperience ?? job.relevantExperience ?? null;
   if (job.minExperience != null && job.maxExperience != null) {
     if (relevant >= job.minExperience && relevant <= job.maxExperience) experienceScore = 100;
-    else if (relevant < job.minExperience) experienceScore = Math.round((relevant / job.minExperience) * 100);
+    else if (relevant < job.minExperience) experienceScore = Math.round(Math.pow(relevant / Math.max(job.minExperience, 1), 0.8) * 100);
     else experienceScore = 85;
-  } else if (job.minExperience != null) {
-    experienceScore = relevant >= job.minExperience ? 100 : Math.round((relevant / job.minExperience) * 100);
-  } else if (job.relevantExperience != null) {
-    experienceScore = relevant >= job.relevantExperience ? 100 : Math.round((relevant / job.relevantExperience) * 100);
+  } else if (requiredYears != null) {
+    experienceScore = relevant >= requiredYears ? 100 : Math.round(Math.pow(relevant / Math.max(requiredYears, 1), 0.8) * 100);
   } else {
-    experienceScore = total >= 5 ? 100 : Math.round((total / 5) * 100);
+    experienceScore = total >= 5 ? 100 : Math.max(40, Math.round((total / 5) * 100));
   }
-  experienceScore = Math.min(100, Math.max(0, experienceScore));
+  experienceScore = Math.min(100, Math.max(5, experienceScore));
 
   // Qualification
   let qualificationScore = 50;
@@ -155,7 +156,6 @@ export function scoreMatch(
   }
 
   // Domain
-  const domainKeywords = new Set<string>();
   const textSources = [(job.description || ""), (job.department?.name || ""), (job.program?.name || ""), (candidate.specialization || ""), (parsed.organizations.join(" ")), (parsed.titles.join(" "))].join(" ");
   const domainWords = ["urban", "planning", "gis", "telecom", "bde", "accounts", "finance", "survey", "design", "drainage", "water", "civil", "mechanical", "hydraulics", "mis", "data", "analytics", "hr", "security", "research", "development"];
   const foundDomain = domainWords.filter((w) => textSources.toLowerCase().includes(w));
@@ -192,6 +192,7 @@ export function scoreMatch(
   if (parsed.certifications.length) strengths.push(`${parsed.certifications.length} certification(s) found`);
 
   const explanation = `Overall match ${overall}% based on skills (${skillScore}%), experience (${experienceScore}%), qualification (${qualificationScore}%), domain (${domainScore}%), and certifications (${certificationScore}%). ${strengths.join("; ")}. ${gaps.join("; ")}`.trim();
+  const recommendation = overall >= 75 ? "Strong match — recommended for interview" : overall >= 55 ? "Potential match — review before shortlisting" : "Low match — not recommended";
 
   return {
     overallScore: overall,
@@ -205,6 +206,7 @@ export function scoreMatch(
     strengths,
     gaps,
     explanation,
+    recommendation,
     extractionConfidence: parsed.confidence,
     weights,
   };

@@ -7,6 +7,7 @@ import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
 import PageHeading from "../../components/ref/PageHeading";
 import Button from "../../components/ref/Button";
 import Modal from "../../components/ref/Modal";
+import DatePicker, { parseDMYValue } from "../../components/ref/DatePicker";
 import { Input, Select, Textarea } from "../../components/ref/Input";
 import StatusPill from "../../components/ref/StatusPill";
 
@@ -27,6 +28,29 @@ const EMPTY = {
 
 const toNumberOrZero = (value: string | undefined) => (value?.trim() ? Number(value) : 0);
 
+const isoToDMY = (iso?: string | null) => {
+  if (!iso) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (!match) return "";
+  return `${match[3]}/${match[2]}/${match[1]}`;
+};
+
+const dmyToIso = (value: string): string | undefined => {
+  const parsed = parseDMYValue(value);
+  if (!parsed) return undefined;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parsed.year}-${pad(parsed.month)}-${pad(parsed.day)}`;
+};
+
+const decimalOnly = (value: string) => {
+  const cleaned = value.replace(/[^0-9.]/g, "");
+  const dot = cleaned.indexOf(".");
+  if (dot === -1) return cleaned;
+  return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, "");
+};
+
+const digitsOnly = (value: string) => value.replace(/\D/g, "");
+
 export default function Openings() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,15 +63,15 @@ export default function Openings() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [viewStatus, setViewStatus] = useState<"open" | "closed" | "archive" | "all">(() => { const value = searchParams.get("view"); return value === "closed" || value === "archive" ? value : "open"; });
+  const [viewStatus, setViewStatus] = useState<"draft" | "open" | "closed" | "archive" | "all">(() => { const value = searchParams.get("view"); return value === "draft" || value === "closed" || value === "archive" ? value : "open"; });
   const debouncedSearch = useDebounced(search);
 
   useEffect(() => {
     const value = searchParams.get("view");
-    setViewStatus(value === "closed" || value === "archive" ? value : "open");
+    setViewStatus(value === "draft" || value === "closed" || value === "archive" ? value : "open");
   }, [searchParams]);
 
-  const selectView = (value: "open" | "closed" | "archive" | "all") => {
+  const selectView = (value: "draft" | "open" | "closed" | "archive" | "all") => {
     setViewStatus(value);
     setSearchParams(value === "open" ? {} : value === "all" ? { view: "all" } : { view: value }, { replace: true });
   };
@@ -68,21 +92,29 @@ export default function Openings() {
 
   const visibleItems = useMemo(
     () => items.filter((opening: any) => viewStatus === "all"
-      || (viewStatus === "open" && opening.status !== "CLOSED" && opening.status !== "ARCHIVED")
+      || (viewStatus === "draft" && opening.status === "DRAFT")
+      || (viewStatus === "open" && opening.status === "PUBLISHED")
       || (viewStatus === "closed" && opening.status === "CLOSED")
       || (viewStatus === "archive" && opening.status === "ARCHIVED")),
     [items, viewStatus],
   );
-  const openCount = items.filter((opening: any) => opening.status !== "CLOSED" && opening.status !== "ARCHIVED").length;
+  const draftCount = items.filter((opening: any) => opening.status === "DRAFT").length;
+  const openCount = items.filter((opening: any) => opening.status === "PUBLISHED").length;
   const closedCount = items.filter((opening: any) => opening.status === "CLOSED").length;
   const archivedCount = items.filter((opening: any) => opening.status === "ARCHIVED").length;
 
   const openCreate = () => {
     setEditingId("");
-    setForm({ ...EMPTY, minExperience: "0" });
+    setForm({ ...EMPTY, minExperience: "0", jobCode: "" });
     setJdFile(null);
     setError("");
     setShowForm(true);
+    hrApi.nextJobCode()
+      .then((r: any) => {
+        const code = r?.data?.jobCode;
+        if (code) setForm((current) => (current.jobCode ? current : { ...current, jobCode: code }));
+      })
+      .catch(() => {});
   };
 
   const openEdit = (opening: any) => {
@@ -96,7 +128,7 @@ export default function Openings() {
       requiredQualification: opening.requiredQualification ?? "",
       minExperience: String(opening.minExperience ?? 0),
       maxExperience: opening.maxExperience != null ? String(opening.maxExperience) : "",
-      deadline: opening.deadline ? String(opening.deadline).slice(0, 10) : "",
+      deadline: isoToDMY(opening.deadline),
       description: opening.description ?? "",
       requiredSkills: Array.isArray(opening.requiredSkills) ? opening.requiredSkills.join(", ") : opening.requiredSkills ?? "",
       status: opening.status ?? "DRAFT",
@@ -113,20 +145,58 @@ export default function Openings() {
 
     const minExperience = toNumberOrZero(form.minExperience);
     const maxExperience = form.maxExperience.trim() ? Number(form.maxExperience) : undefined;
+    const positions = form.positions.trim() ? Number(form.positions) : 0;
     if (!Number.isFinite(minExperience) || minExperience < 0) {
       setError("Minimum experience must be zero or greater.");
       setSaving(false);
       return;
     }
-    const payload = { ...form, minExperience, maxExperience };
+    if (!Number.isFinite(positions) || positions < 1) {
+      setError("Positions must be at least 1.");
+      setSaving(false);
+      return;
+    }
+    if (maxExperience !== undefined && (!Number.isFinite(maxExperience) || maxExperience < minExperience)) {
+      setError("Maximum experience cannot be less than minimum experience.");
+      setSaving(false);
+      return;
+    }
+    let deadline: string | undefined;
+    if (form.deadline.trim()) {
+      deadline = dmyToIso(form.deadline);
+      if (!deadline) {
+        setError("Enter a valid calendar date as DD/MM/YYYY.");
+        setSaving(false);
+        return;
+      }
+    }
+    const payload = {
+      jobCode: form.jobCode || undefined,
+      title: form.title,
+      positions,
+      location: form.location || undefined,
+      employmentTypeId: form.employmentTypeId || undefined,
+      requiredQualification: form.requiredQualification || undefined,
+      minExperience,
+      maxExperience,
+      deadline,
+      description: form.description,
+      requiredSkills: form.requiredSkills,
+      status: form.status,
+    };
 
     try {
       if (editingId) {
         await hrApi.updateOpening(editingId, payload, jdFile || undefined);
         setMessage("Opening updated.");
+      } else if (payload.status === "PUBLISHED") {
+        await hrApi.createOpening(payload, jdFile || undefined);
+        setMessage("Opening published — it is now live on the careers site.");
+        selectView("open");
       } else {
         await hrApi.createOpening(payload, jdFile || undefined);
         setMessage("Opening saved as a draft.");
+        selectView("draft");
       }
       setShowForm(false);
       setEditingId("");
@@ -194,7 +264,7 @@ export default function Openings() {
         <div className="table-toolbar">
           <div>
             <h2 className="card__title">Opening register</h2>
-            <p className="card__subtitle">Active openings stay here. Closing an opening archives it rather than deleting the record.</p>
+            <p className="card__subtitle">Drafts stay here until published. Publishing makes an opening live on the careers site.</p>
           </div>
           <div className="table-toolbar__controls table-toolbar__controls--stack">
             <input
@@ -205,6 +275,7 @@ export default function Openings() {
               aria-label="Search openings"
             />
             <div className="filters" aria-label="Opening status view">
+              <button type="button" className={`ta-filter-chip ${viewStatus === "draft" ? "active" : ""}`} onClick={() => selectView("draft")}>Draft <span className="ta-filter-chip__count">{draftCount}</span></button>
               <button type="button" className={`ta-filter-chip ${viewStatus === "open" ? "active" : ""}`} onClick={() => selectView("open")}>Open <span className="ta-filter-chip__count">{openCount}</span></button>
               <button type="button" className={`ta-filter-chip ${viewStatus === "closed" ? "active" : ""}`} onClick={() => selectView("closed")}>Close <span className="ta-filter-chip__count">{closedCount}</span></button>
               <button type="button" className={`ta-filter-chip ${viewStatus === "archive" ? "active" : ""}`} onClick={() => selectView("archive")}>Archive <span className="ta-filter-chip__count">{archivedCount}</span></button>
@@ -236,7 +307,7 @@ export default function Openings() {
                   <td>{opening.location ?? "—"}</td>
                   <td>{opening._count?.applications ?? 0}</td>
                   <td>{Number(opening.minExperience ?? 0)} years</td>
-                  <td>{opening.deadline ? new Date(opening.deadline).toLocaleDateString() : "—"}</td>
+                  <td>{opening.deadline ? new Date(opening.deadline).toLocaleDateString("en-GB") : "—"}</td>
                   <td>
                     <StatusPill status={opening.status} />
                   </td>
@@ -324,15 +395,16 @@ export default function Openings() {
           <Input
             label="Job code"
             value={form.jobCode}
-            onChange={(event) => setForm((current) => ({ ...current, jobCode: event.target.value }))}
-            placeholder="Auto-generated when empty"
+            readOnly
+            hint={editingId ? "Job code is fixed for this opening." : "Auto-generated as EMC<YEAR><MONTH>J<n> for the current month."}
           />
           <Input
             label="Positions"
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={1}
             value={form.positions}
-            onChange={(event) => setForm((current) => ({ ...current, positions: event.target.value }))}
+            onChange={(event) => setForm((current) => ({ ...current, positions: digitsOnly(event.target.value) }))}
           />
           <Input
             label="Location"
@@ -354,26 +426,28 @@ export default function Openings() {
           />
           <Input
             label="Minimum experience"
-            type="number"
+            type="text"
+            inputMode="decimal"
             min={0}
             step="0.5"
             value={form.minExperience}
-            onChange={(event) => setForm((current) => ({ ...current, minExperience: event.target.value }))}
+            onChange={(event) => setForm((current) => ({ ...current, minExperience: decimalOnly(event.target.value) }))}
             placeholder="0"
           />
           <Input
             label="Maximum experience"
-            type="number"
+            type="text"
+            inputMode="decimal"
             min={0}
             step="0.5"
             value={form.maxExperience}
-            onChange={(event) => setForm((current) => ({ ...current, maxExperience: event.target.value }))}
+            onChange={(event) => setForm((current) => ({ ...current, maxExperience: decimalOnly(event.target.value) }))}
           />
-          <Input
+          <DatePicker
             label="Application deadline"
-            type="date"
+            hint="Format: DD/MM/YYYY — type it or pick from the calendar"
             value={form.deadline}
-            onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value }))}
+            onChange={(value) => setForm((current) => ({ ...current, deadline: value }))}
           />
           <Select
             label="Status"
@@ -381,10 +455,12 @@ export default function Openings() {
             onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
             options={[
               { value: "DRAFT", label: "Draft" },
-              { value: "PUBLISHED", label: "Published" },
-              { value: "CLOSED", label: "Archived" },
+              { value: "PUBLISHED", label: "Publish" },
+              ...(form.status === "CLOSED" ? [{ value: "CLOSED", label: "Closed" }] : []),
+              ...(form.status === "ARCHIVED" ? [{ value: "ARCHIVED", label: "Archived" }] : []),
             ]}
             placeholder="Select status"
+            hint="Draft stays in the draft table; Publish makes it live on the careers site."
           />
           <Textarea
             className="field--full"

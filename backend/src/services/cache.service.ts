@@ -1,4 +1,4 @@
-﻿import { invalidate, invalidatePattern, CACHE_KEYS } from "../lib/cache";
+﻿import { invalidatePattern } from "../lib/cache";
 
 /**
  * Centralised cache invalidation helpers.
@@ -10,7 +10,9 @@ export const cache = {
   async openingsChanged() {
     await Promise.all([
       invalidatePattern("emc:openings:*"),
-      invalidatePattern("emc:career:openings:*"),
+      // Covers both career openings and the cached department dropdown, which
+      // would otherwise stay stale until its full TTL after a department change.
+      invalidatePattern("emc:career:*"),
       invalidatePattern("emc:dashboard:*"),
       invalidatePattern("emc:applications:*"),
     ]);
@@ -43,11 +45,8 @@ export const cache = {
       invalidatePattern("emc:dashboard:*"),
       invalidatePattern("emc:offers:*"),
       invalidatePattern("emc:documents:*"),
+      invalidatePattern("emc:applications:*"),
     ]);
   },
 
-  /** Called when a user reads notifications. */
-  async notificationsChanged(userId: string) {
-    await invalidate(CACHE_KEYS.notificationsUnread(userId));
-  },
 };

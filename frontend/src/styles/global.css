@@ -1,6 +1,37 @@
+/* ===========================================================================
+   ECOMETRIX TALENT ACQUISITION PORTAL — GLOBAL STYLESHEET
+   ===========================================================================
+
+   HOW TO CHANGE THE UI SAFELY
+   1. Find the component in the index below, then jump to its section banner.
+   2. Search for the exact CSS class used in the TSX file (e.g. `.stat-card`).
+   3. CSS cascades: if a class appears more than once, the LAST rule wins.
+      The "Responsive overrides" section near the end intentionally overrides
+      earlier rules at smaller screen widths — edit there for breakpoint fixes.
+   4. Colours, spacing and radii come from variables in `styles/variables.css`.
+      Change the variable once to update every component that uses it.
+
+   SECTION INDEX
+     Base ............................ reset, typography, design-variable use
+     Sidebar navigation .............. brand, groups, links, footer
+     Top bar / application header .... search, profile, notification controls
+     Buttons & controls .............. buttons, inputs, selects, chips
+     Cards & content blocks .......... page headers, panels, callouts
+     Permission editor ............... role/permission matrix
+     Modals & dialogs ................ overlay, dialog, footer
+     Data tables ..................... table, toolbar, pagination
+     Stat cards & KPI tiles .......... dashboard metrics
+     Toasts & transient messages ..... success/error popups
+     Responsive overrides ............ breakpoint-specific overrides (last wins)
+     Utilities — date picker ......... calendar popup
+
+   Page-specific styles live in `styles/reference/*.css` and are imported by
+   `main.tsx`. Look there first when changing a single HR screen.
+   =========================================================================== */
+
 /* ---------------------------------------------------------------
    Base
---------------------------------------------------------------- */
+ --------------------------------------------------------------- */
 *,
 *::before,
 *::after {
@@ -139,13 +170,16 @@ img {
 }
 
 /* Sidebar */
+
+/* ===============================================================
+   
+Sidebar navigation
+   =============================================================== */
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   width: var(--sidebar-width);
-  background:
-    linear-gradient(180deg, rgba(248, 251, 242, 0.9), transparent 170px),
-    var(--color-surface);
+  background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   box-shadow: 1px 0 0 rgba(23, 35, 15, 0.015);
   display: flex;
@@ -167,8 +201,9 @@ img {
   left: 50%;
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   max-width: none;
+  object-fit: contain;
   transform: translate(-50%, -50%);
 }
 
@@ -176,36 +211,29 @@ img {
   display: flex;
   flex-direction: column;
   align-items: center;
+  text-align: center;
   gap: 0.55rem;
   padding: 1.05rem 1rem 0.95rem;
   border-bottom: 1px solid var(--color-border-subtle);
-  background:
-    radial-gradient(180px 110px at 50% 0%, rgba(122, 180, 27, 0.08), transparent 78%),
-    var(--color-white);
+  background: var(--color-white);
 }
 
 .sidebar__logo-frame {
   width: 148px;
   height: 86px;
+  margin-inline: auto;
+  background: #fff;
+  border-radius: 12px;
 }
 
-.sidebar__brand-copy {
-  text-align: center;
-}
+
 
 .sidebar__brand-name {
+  max-width: 100%;
   font-weight: 700;
-  font-size: 0.87rem;
+  font-size: 1rem;
   line-height: 1.25;
   color: var(--color-text);
-}
-
-.sidebar__brand-sub {
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  line-height: 1.35;
-  letter-spacing: 0.015em;
 }
 
 .sidebar__scroll {
@@ -452,7 +480,7 @@ img {
 }
 
 .dark .sidebar { background: linear-gradient(180deg, rgba(28, 37, 22, 0.94), transparent 170px), var(--color-surface); border-right-color: var(--color-border); box-shadow: none; }
-.dark .app-header { background: rgba(27, 36, 24, 0.82); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04); }
+.dark .app-header { background: var(--color-surface); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04); }
 .dark .bg-white { background: var(--color-surface) !important; }
 .dark input, .dark select, .dark textarea { color-scheme: dark; }
 .dark ::placeholder { color: var(--color-text-subtle); }
@@ -465,18 +493,20 @@ img {
   width: 100%;
   margin-top: 0.65rem;
   padding: 0.62rem 0.7rem;
-  border: 0;
+  border: 1px solid rgba(220, 38, 38, 0.35);
   border-radius: 10px;
-  background: transparent;
-  color: var(--color-text-muted);
+  background: rgba(220, 38, 38, 0.07);
+  color: #dc2626;
   font: inherit;
   font-size: 0.82rem;
+  font-weight: 700;
   text-align: left;
 }
 
 .sidebar__logout:hover {
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
 }
 
 .sidebar__user {
@@ -496,6 +526,11 @@ img {
 }
 
 .sidebar__user-role {
+
+/* ===============================================================
+   
+Top bar / application header
+   =============================================================== */
   font-size: 0.69rem;
   color: var(--color-text-muted);
 }
@@ -510,15 +545,13 @@ img {
   align-items: center;
   gap: 1rem;
   padding: 0 2rem;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(16px) saturate(1.4);
+  background: var(--color-white);
   border-bottom: 1px solid var(--color-border);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .app-header__breadcrumb {
   display: flex;
-  align-items: center;
   gap: 0.42rem;
   font-size: 0.78rem;
   color: var(--color-text-muted);
@@ -780,6 +813,11 @@ img {
 .callout strong,
 .callout span { display: block; }
 .callout span { margin-top: 0.15rem; color: var(--color-text-muted); font-size: 0.75rem; }
+
+/* ===============================================================
+   
+Permission editor
+   =============================================================== */
 .permission-editor { display: grid; gap: 0.9rem; }
 .permission-editor__user { display: flex; align-items: center; gap: 0.7rem; padding-bottom: 0.85rem; border-bottom: 1px solid var(--color-border-subtle); }
 .permission-editor__user strong,
@@ -939,11 +977,11 @@ img {
 .app-header__profile-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.25;
+  line-height: 1.50;
 }
 
 .app-header__profile-name {
-  font-size: 0.78rem;
+  font-size: 1rem;
   font-weight: 650;
   color: var(--color-text);
 }
@@ -1046,9 +1084,27 @@ img {
   flex: 1;
 }
 
+.page-toolbar--row {
+  flex-wrap: nowrap;
+}
+
+.page-toolbar--row .search-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-toolbar--row .filters {
+  flex-shrink: 0;
+}
+
 /* ---------------------------------------------------------------
    Buttons
 --------------------------------------------------------------- */
+
+/* ===============================================================
+   
+Buttons & controls
+   =============================================================== */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1196,6 +1252,11 @@ img {
   to {
     transform: rotate(360deg);
   }
+
+/* ===============================================================
+   
+Cards & content blocks
+   =============================================================== */
 }
 
 /* ---------------------------------------------------------------
@@ -1586,6 +1647,11 @@ img {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+
+/* ===============================================================
+   
+Modals & dialogs
+   =============================================================== */
 }
 
 .photo-field__actions-row {
@@ -1706,6 +1772,11 @@ img {
   }
   to {
     opacity: 1;
+
+/* ===============================================================
+   
+Data tables
+   =============================================================== */
   }
 }
 
@@ -2167,6 +2238,11 @@ img {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   color: var(--color-text-muted);
+
+/* ===============================================================
+   
+Stat cards & KPI tiles
+   =============================================================== */
   border-radius: 999px;
   font-size: 0.66rem;
   font-weight: 700;
@@ -2501,6 +2577,11 @@ button.stat-card {
 }
 
 @keyframes shimmer {
+
+/* ===============================================================
+   
+Toasts & transient messages
+   =============================================================== */
   0% {
     background-position: 100% 50%;
   }
@@ -2662,6 +2743,11 @@ button.stat-card {
 .detail-item--full {
   grid-column: 1 / -1;
 }
+
+/* ===============================================================
+   
+Responsive overrides — LAST MATCHING RULE WINS
+   =============================================================== */
 
 .detail-section + .detail-section {
   margin-top: 1.45rem;
@@ -3086,6 +3172,11 @@ button.stat-card {
 .master-assignment-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; padding: 0.45rem; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
 .master-assignment-row:hover { background: var(--color-surface-muted); }
 .master-assignment-row--selected { background: var(--color-primary-tint); border-color: var(--color-primary-line); }
+
+/* ===============================================================
+   
+Utilities — date picker
+   =============================================================== */
 .master-assignment-row .avatar { width: 34px; height: 34px; font-size: 0.66rem; }
 .master-assignment-row__text { min-width: 0; }
 .master-assignment-row__text strong, .master-assignment-row__text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3100,22 +3191,12 @@ button.stat-card {
 .data-table__row--clickable:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 
 
-.app-header__portal { position: absolute; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 0.78rem; margin: 0; min-width: 0; padding: 0.37rem 1.05rem 0.37rem 0.42rem; border: 1px solid var(--color-border); border-radius: 13px; background:
-  linear-gradient(120deg, rgba(154,205,39,.18), transparent 42%),
-  var(--color-surface); box-shadow: 0 4px 20px rgba(17, 26, 48, 0.09), inset 0 -1px 0 rgba(17, 26, 48, 0.055); white-space: nowrap; z-index: 2; }
-.app-header__portal-mark { position: relative; display: inline-grid; place-items: center; overflow: hidden; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 10px; background: var(--color-text-strong); box-shadow: inset 0 -3px 0 rgba(4, 8, 18, .22), 0 3px 8px rgba(17, 26, 48, .18); }
-.app-header__portal-mark::before { position: absolute; content: ""; inset: -17px 24px -17px 2px; background: var(--color-primary); opacity: .78; transform: skew(-24deg); }
-.app-header__portal-mark::after { position: absolute; content: "TA"; left: 15px; top: 7px; color: #fff; font-size: 1rem; font-weight: 950; letter-spacing: -.08em; }
-.app-header__portal-mark i { position: absolute; z-index: 1; }
-.app-header__portal-mark i:nth-child(1) { left: 6px; bottom: 5px; width: 17px; height: 2px; background: var(--color-primary); transform: skew(-24deg); }
-.app-header__portal-mark i:nth-child(2) { right: 5px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary); }
-.app-header__portal-mark i:nth-child(3) { right: 7px; bottom: 7px; width: 15px; height: 1px; background: rgba(255,255,255,.7); }
+.app-header__portal { position: absolute; left: 50%; transform: translateX(-50%); display: inline-flex; gap: 0.78rem; margin: 0; min-width: 0; padding: 0.37rem 1.05rem 0.37rem 0.42rem; white-space: nowrap; z-index: 2; }
 .app-header__portal-title { color: var(--color-text-strong); font-size: 1.03rem; font-weight: 900; letter-spacing: .085em; line-height: 1; }
 .app-header__portal-title em { color: var(--color-primary-dark); font-style: normal; font-weight: 950; }
 @media (max-width: 900px) { .app-header__portal { position: static; transform: none; margin-left: auto; padding: .32rem; gap: .4rem; } .app-header__portal-title { font-size: .78rem; } }
-@media (max-width: 640px) { .app-header__portal-mark { width: 34px; height: 34px; flex-basis: 34px; } .app-header__portal-mark::after { left: 12px; top: 7px; font-size: .82rem; } .app-header__portal-title { max-width: 178px; overflow: hidden; text-overflow: ellipsis; font-size: .62rem; letter-spacing: .05em; } }
+@media (max-width: 640px) { .app-header__portal-title { max-width: 178px; overflow: hidden; text-overflow: ellipsis; font-size: .62rem; letter-spacing: .05em; } }
 @media (max-width: 430px) { .app-header__portal-title { display: none; } }
-.dark .app-header__portal { background: linear-gradient(120deg, rgba(154,205,39,.12), transparent 45%), var(--color-surface); box-shadow: none; }
 .dark .app-header__portal { background: linear-gradient(135deg, rgba(41, 52, 35, .36), rgba(17,26,48,.35)); box-shadow: none; }
 .sidebar__link-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -3123,11 +3204,99 @@ button.stat-card {
 .sidebar__group-toggle { min-height: 42px; }
 .tabs { flex-wrap: nowrap; }
 
-.app-header__portal { position: static; left: auto; transform: none; z-index: 1; gap: .35rem; padding: .42rem .65rem .42rem .18rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
-.app-header__portal::after { position: absolute; content: ""; left: .18rem; bottom: .2rem; width: 100%; height: 3px; border-radius: 999px; background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-dark) 36%, #ff8a24 68%, #df5d19 100%); opacity: .9; }
-.app-header__portal-title { display: inline-flex; align-items: baseline; gap: .25rem; padding-bottom: .28rem; color: var(--color-text-strong); font-size: .96rem; font-weight: 950; letter-spacing: .125em; line-height: 1; }
+.app-header__portal-title { display: inline-flex; align-items: baseline; gap: .25rem; padding-bottom: 0; color: #000; font-size: 1.3rem; font-weight: 950; letter-spacing: .1em; line-height: 1; white-space: nowrap; }
 .app-header__portal-title em { background: linear-gradient(95deg, var(--color-primary) 0%, var(--color-primary-dark) 45%, #f26d1a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; font-style: normal; font-weight: 950; text-shadow: none; }
 .app-header__portal-title i { color: #e8691a; font-style: normal; font-weight: 950; }
-@media (max-width: 900px) { .app-header__portal { margin-left: 0; padding: .32rem .35rem .32rem .12rem; } .app-header__portal-title { font-size: .7rem; letter-spacing: .07em; } }
+@media (max-width: 900px) { .app-header__portal { position: static; transform: none; margin-left: auto; padding: .32rem .35rem .32rem .12rem; } .app-header__portal-title { font-size: .7rem; letter-spacing: .07em; } }
 @media (max-width: 640px) { .app-header__portal-title { max-width: none; font-size: .52rem; } }
 
+
+/* Date picker (application deadline) */
+.datepicker { position: relative; }
+.datepicker__input { padding-right: 2.6rem; }
+.datepicker__toggle { position: absolute; right: 0.45rem; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; padding: 0.38rem; border: none; border-radius: 8px; background: transparent; color: var(--color-text-subtle); cursor: pointer; transition: color var(--transition-fast), background var(--transition-fast); }
+.datepicker__toggle:hover:not(:disabled) { color: var(--color-primary-dark); background: rgba(131, 179, 33, 0.14); }
+.datepicker__toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.datepicker__toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+.datepicker__popover { position: absolute; top: calc(100% + 6px); right: 0; z-index: 1100; width: 17.5rem; padding: 0.7rem; border: 1px solid var(--color-border-strong); border-radius: 12px; background: var(--color-surface); box-shadow: var(--shadow-lg); animation: modal-in 0.14s ease; }
+.datepicker__nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem; }
+.datepicker__month { font-size: 0.85rem; font-weight: 700; color: var(--color-text-strong); }
+.datepicker__navbtn { display: inline-flex; align-items: center; justify-content: center; padding: 0.32rem; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--color-text-muted); cursor: pointer; }
+.datepicker__navbtn:hover { background: var(--color-surface-muted); color: var(--color-text-strong); }
+.datepicker__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.datepicker__weekday { text-align: center; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-subtle); padding: 0.22rem 0; }
+.datepicker__day { display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 8px; padding: 0.4rem 0; font-size: 0.78rem; color: var(--color-text); cursor: pointer; transition: background var(--transition-fast); }
+.datepicker__day:hover { background: rgba(131, 179, 33, 0.16); }
+.datepicker__day--blank { visibility: hidden; cursor: default; }
+.datepicker__day--today { box-shadow: inset 0 0 0 1px var(--color-primary); }
+.datepicker__day--selected, .datepicker__day--selected:hover { background: var(--color-primary); color: #111a30; font-weight: 700; box-shadow: none; }
+.datepicker__footer { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.5rem; border-top: 1px solid var(--color-border); padding-top: 0.5rem; }
+.datepicker__action { border: none; background: transparent; font-size: 0.76rem; font-weight: 650; color: var(--color-primary-dark); cursor: pointer; padding: 0.25rem 0.4rem; border-radius: 6px; }
+.datepicker__action:hover { text-decoration: underline; }
+
+/* Portal name aligned to the left of the header, beside the navigation toggle. */
+.app-header__portal {
+  position: static !important;
+  left: auto !important;
+  transform: none !important;
+  margin: 0 !important;
+  padding: 0.32rem 0.75rem !important;
+  z-index: auto !important;
+}
+@media (max-width: 430px) {
+  .app-header__portal-title { display: inline !important; font-size: 0.62rem !important; letter-spacing: 0.04em !important; }
+}
+
+/* Final selection: all evaluation cards side by side on one form page. */
+.modal--xl:has(.ta-final-layout) {
+  max-width: min(97vw, 1720px);
+}
+
+.ta-final-layout {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0.7rem !important;
+  align-items: start !important;
+}
+
+.ta-final-layout__main,
+.ta-final-layout__side {
+  display: contents !important;
+}
+
+.ta-final-layout .ta-panel {
+  margin: 0 !important;
+  padding: 0.75rem 0.85rem !important;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ta-final-layout .ta-panel__header {
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.ta-final-layout .detail-grid,
+.ta-final-layout .form-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0.45rem;
+}
+
+.ta-final-layout .ta-choice-row {
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.ta-final-layout .ta-detail-list {
+  max-height: 26vh;
+  overflow-y: auto;
+}
+
+.ta-final-layout textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+@media (max-width: 1100px) {
+  .ta-final-layout { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}

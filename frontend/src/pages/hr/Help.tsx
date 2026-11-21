@@ -52,7 +52,7 @@ const MODULES = [
     toLabel: "Open interview management",
     tasks: [
       "Add every interviewer with name and email so communications reach them.",
-      "Record rating, remarks and outcome for every round — missing feedback stalls approvals.",
+      "Record the candidate result, remarks and outcome for every round - missing feedback stalls approvals.",
       "Move candidates to SELECTED only after all mandatory rounds are complete.",
     ],
   },

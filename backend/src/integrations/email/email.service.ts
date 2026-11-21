@@ -12,7 +12,7 @@ function getTransporter(): Transporter | null {
       port: env.smtpPort,
       secure: env.smtpSecure,
       auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
-      tls: env.smtpSecure ? {} : { rejectUnauthorized: false },
+      tls: { rejectUnauthorized: env.smtpRejectUnauthorized },
     }) : null;
   }
   return transporter;

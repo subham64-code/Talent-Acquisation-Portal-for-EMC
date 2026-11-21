@@ -10,10 +10,6 @@ const HRLogin = lazy(() => import("./pages/hr/Login"));
 const EmployeeUpdate = lazy(() => import("./pages/employee/Update"));
 const OfferRespond = lazy(() => import("./pages/offer/Respond"));
 const OnboardDocuments = lazy(() => import("./pages/public/OnboardDocuments"));
-const Home = lazy(() => import("./pages/public/Home"));
-const Jobs = lazy(() => import("./pages/public/Jobs"));
-const JobDetail = lazy(() => import("./pages/public/JobDetail"));
-const Apply = lazy(() => import("./pages/public/Apply"));
 const HRRoutes = lazy(() => import("./pages/hr/routes"));
 const ITRoutes = lazy(() => import("./pages/it/ITRoutes"));
 
@@ -21,9 +17,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 60 * 1000,
-      gcTime: 5 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
       refetchOnWindowFocus: false,
-      retry: 1,
+      refetchOnReconnect: true,
+      retry: 2,
     },
   },
 });
@@ -65,7 +62,7 @@ function PublicHome() {
   const { user, loading } = useAuth();
   if (loading) return <RouteFallback />;
   if (user?.type === "HR") return <Navigate to={isItAdmin(user) && !(user?.roles || []).includes("SUPER_ADMIN") ? "/it/dashboard" : "/hr/dashboard"} replace />;
-  return <Navigate to="/career" replace />;
+  return <Navigate to="/auth/hr/login" replace />;
 }
 
 function NotFound() {
@@ -74,7 +71,7 @@ function NotFound() {
       <Logo size={56} />
       <h1 className="text-2xl font-extrabold ink-body">Page not found</h1>
       <p className="text-sm ink-soft">The page you are looking for does not exist or has moved.</p>
-      <a href="/career" className="btn-primary">Back to careers</a>
+      <a href="/auth/hr/login" className="btn-primary">Go to sign in</a>
     </div>
   );
 }
@@ -93,10 +90,6 @@ export default function App() {
                 <Route path="/employee-update" element={<EmployeeUpdate />} />
                 <Route path="/offer/respond" element={<OfferRespond />} />
                 <Route path="/onboard/documents" element={<OnboardDocuments />} />
-                <Route path="/career" element={<Home />} />
-                <Route path="/careers/jobs" element={<Jobs />} />
-                <Route path="/careers/jobs/:id" element={<JobDetail />} />
-                <Route path="/careers/apply" element={<Apply />} />
                 <Route path="/hr/*" element={<RequireHR><HRRoutes /></RequireHR>} />
                 <Route path="/it/*" element={<RequireIT><ITRoutes /></RequireIT>} />
                 <Route path="*" element={<NotFound />} />

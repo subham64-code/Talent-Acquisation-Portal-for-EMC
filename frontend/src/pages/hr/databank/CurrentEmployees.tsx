@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarDays, ChevronRight, Eye, LayoutGrid, List, Mail, Pencil, Plus, Trash2, UserMinus, UserPlus, UsersRound } from "lucide-react";
+import { ChevronRight, Eye, Mail, Pencil, Plus, Trash2, UserPlus, UsersRound } from "lucide-react";
 import DataTable, { type Column } from "../../../components/DataTable";
 import Badge from "../../../components/ref/Badge";
 import PageHeader from "../../../components/ref/PageHeader";
@@ -13,6 +13,7 @@ import EmployeeFormModal from "./EmployeeFormModal";
 import { EmptyStateBlock, formatDate, initials } from "./shared";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery, useInvalidate } from "../../../hooks/useApiQuery";
+import { useDebounced } from "../../../hooks/useDebounced";
 
 export default function CurrentEmployeesView({ departments, designations, employmentTypes, onInvite, onInvalidate }: {
   departments: any[];
@@ -26,6 +27,7 @@ export default function CurrentEmployeesView({ departments, designations, employ
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("");
   const [employmentType, setEmploymentType] = useState("");
+  const [position, setPosition] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -34,29 +36,37 @@ export default function CurrentEmployeesView({ departments, designations, employ
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const { data: rows = [], isLoading } = useApiQuery<any[]>(
-    ["employees", "current"],
-    () => hrApi.employees({ page: 1, pageSize: 100, status: "EXISTING" }).then((r: any) => r?.data?.items ?? []),
-  );
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const debouncedSearch = useDebounced(search);
 
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      const matchesTerm =
-        !term ||
-        [row.fullName, row.officialEmail, row.employeeCode, row.designation?.name, row.department?.name]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term));
-      const matchesDepartment = !department || row.departmentId === department;
-      const matchesType = !employmentType || row.employmentTypeId === employmentType;
-      return matchesTerm && matchesDepartment && matchesType;
-    });
-  }, [rows, search, department, employmentType]);
+  // Filters and paging are applied on the server; no full-table fetch here.
+  const params = useMemo(() => ({
+    page,
+    pageSize: 20,
+    status: "EXISTING",
+    search: debouncedSearch || undefined,
+    departmentId: department || undefined,
+    designationId: position || undefined,
+    employmentTypeId: employmentType || undefined,
+  }), [page, debouncedSearch, department, position, employmentType]);
+
+  const { data, isLoading } = useApiQuery<any>(
+    ["employees", "current", params],
+    () => hrApi.employees(params).then((r: any) => r?.data ?? {}),
+  );
+  const rows: any[] = Array.isArray(data) ? data : data?.items ?? [];
+  useEffect(() => {
+    setPagination({ total: Number(data?.total ?? 0), totalPages: Number(data?.totalPages ?? 1) });
+  }, [data?.total, data?.totalPages]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, department, position, employmentType]);
+  const filtered = rows;
 
   const clear = () => {
     setSearch("");
     setDepartment("");
     setEmploymentType("");
+    setPosition("");
   };
 
   const save = async (values: any, cv: File | null) => {
@@ -185,11 +195,12 @@ export default function CurrentEmployeesView({ departments, designations, employ
         searchPlaceholder="Search current employees by name, email or ID…"
         filters={[
           { key: "department", label: "Departments", placeholder: "All Departments", value: department, onChange: setDepartment, options: departments.map((d: any) => ({ value: d.id, label: d.name })) },
-          { key: "employmentType", label: "Employment Types", placeholder: "All Employment Types", value: employmentType, onChange: setEmploymentType, options: employmentTypes.map((t: any) => ({ value: t.id, label: t.name })) },
+            { key: "employmentType", label: "Employment Types", placeholder: "All Employment Types", value: employmentType, onChange: setEmploymentType, options: employmentTypes.map((t: any) => ({ value: t.id, label: t.name })) },
+            { key: "position", label: "Positions", placeholder: "All Positions", value: position, onChange: setPosition, options: designations.map((d: any) => ({ value: d.id, label: d.name })) },
         ]}
         onClear={clear}
       >
-        <span className="filters-summary">{isLoading ? "Loading records…" : `${filtered.length} of ${rows.length} employees shown`}</span>
+        <span className="filters-summary">{isLoading ? "Loading records…" : `${pagination.total} employees found`}</span>
         <ViewToggle value={viewMode} onChange={setViewMode} label="Switch employee view" />
       </DatabankToolbar>
 
@@ -200,7 +211,7 @@ export default function CurrentEmployeesView({ departments, designations, employ
           rowKey={(row) => row.id}
           loading={isLoading}
           empty={<EmptyStateBlock icon={UsersRound} title="No employees match this view" description="Adjust your search or filters, or add a new employee to the databank." action={<Button icon={Plus} size="sm" onClick={() => setAddOpen(true)}>Add Employee</Button>} />}
-          footer={<><span>Showing <strong>{filtered.length}</strong> current employee record{filtered.length === 1 ? "" : "s"}</span><span className="cell-muted">Open an employee to manage CV documents</span></>}
+          footer={<><span>Page <strong>{page}</strong> of {pagination.totalPages} · {pagination.total} records</span><span className="databank-pager"><button type="button" className="btn btn--outline btn--sm" disabled={page <= 1 || isLoading} onClick={() => setPage(page - 1)}>Previous</button><button type="button" className="btn btn--outline btn--sm" disabled={page >= pagination.totalPages || isLoading} onClick={() => setPage(page + 1)}>Next</button></span></>}
         />
       ) : (
         <div className="employee-card-grid">

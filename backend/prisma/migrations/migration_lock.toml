@@ -1,0 +1,4 @@
+# Please follow the Prisma Migrate develop documentation
+# https://pris.ly/d/migrate-develop
+
+provider = "postgresql"

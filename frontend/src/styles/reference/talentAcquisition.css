@@ -582,6 +582,11 @@ button.ta-pipeline__button:hover {
   margin-top: 1rem;
 }
 
+.ta-screening-layout__main .ta-panel + .ta-panel,
+.ta-screening-layout__main .ta-panel {
+  margin-top: 0;
+}
+
 .ta-panel__header {
   display: flex;
   align-items: center;

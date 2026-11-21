@@ -15,7 +15,7 @@ import { notifyHrTeam, notifyCandidate } from "../services/notification.service"
 import { sendTemplateEmail } from "../integrations/email/email.service";
 import { readStoredFile, storeFile, STORAGE_BUCKETS } from "../storage/index";
 import { env } from "../config/env";
-import { OFFER_STATUS, APPLICATION_STATUS, APPLICATION_STATUS_LABELS } from "../config/constants";
+import { OFFER_STATUS, APPLICATION_STATUS } from "../config/constants";
 import PDFDocument from "pdfkit";
 import { signPurposeToken, verifyPurposeToken } from "../utils/jwt";
 
@@ -49,16 +49,21 @@ router.post(
     if (decision === "ACCEPTED") {
       await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.OFFER_ACCEPTED } });
       await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.OFFER_ACCEPTED, changedById: null, remarks: "Candidate accepted offer" } });
-      // Initialize required documents
-      const categories = await prisma.documentCategory.findMany({ where: { isActive: true } });
-      for (const cat of categories) {
-        await prisma.candidateDocument.upsert({
-          where: { applicationId_categoryId: { applicationId: offer.applicationId, categoryId: cat.id } },
-          update: {},
-          create: { candidateId: offer.application.candidateId, applicationId: offer.applicationId, categoryId: cat.id, status: "NOT_UPLOADED" },
+      // Initialize required documents in a single round trip instead of one
+      // upsert per category (the compound unique makes skipDuplicates safe).
+      const categories = await prisma.documentCategory.findMany({ where: { isActive: true }, select: { id: true } });
+      if (categories.length) {
+        await prisma.candidateDocument.createMany({
+          data: categories.map((cat) => ({
+            candidateId: offer.application.candidateId,
+            applicationId: offer.applicationId,
+            categoryId: cat.id,
+            status: "NOT_UPLOADED",
+          })),
+          skipDuplicates: true,
         });
       }
-      const createdDocs = await prisma.documentCategory.count({ where: { isActive: true } });
+      const createdDocs = categories.length;
       await notifyHrTeam({ type: "offer.accepted", title: "Offer accepted", body: `${offer.application.candidate.fullName} accepted the offer for ${offer.designation}.`, entityType: "OfferLetter", entityId: offer.id });
 
       const uploadToken = signPurposeToken({ applicationId: offer.applicationId, candidateId: offer.application.candidateId }, "DOC_UPLOAD", "7d");
@@ -80,6 +85,7 @@ router.post(
     } else {
       await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.REJECTED, hrRemarks: remarks } });
       await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: offer.application.status, toStatus: APPLICATION_STATUS.REJECTED, changedById: null, remarks: "Candidate declined offer" } });
+      await cache.offersChanged();
     }
     await logAudit(req, { action: "OFFER_RESPOND", entityType: "OfferLetter", entityId: offer.id, actorId: null, actorEmail: offer.application.candidate.email, metadata: { decision, actorType: "CANDIDATE", candidateId: decoded.candidateId, applicationId: offer.applicationId } });
     const responsePayload: Record<string, unknown> = { message: `Offer ${decision.toLowerCase()}.`, decision };
@@ -103,7 +109,6 @@ const offerSchema = z.object({
   joiningDate: z.coerce.date().optional().nullable(),
   workLocation: z.string().optional().nullable(),
   employmentTypeId: z.string().min(1).optional().nullable(),
-  reportingTo: z.string().optional().nullable(),
   expiryDate: z.coerce.date().optional().nullable(),
   additionalConditions: z.string().optional().nullable(),
   status: z.nativeEnum(OFFER_STATUS).optional(),
@@ -111,13 +116,6 @@ const offerSchema = z.object({
 
 function pad2(value: number) {
   return String(value).padStart(2, "0");
-}
-
-function formatOfferDate(value?: string | Date | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return `${pad2(date.getDate())} ${date.toLocaleDateString("en-GB", { month: "long" })} ${date.getFullYear()}`;
 }
 
 function ordinalDate(value?: string | Date | null) {
@@ -137,9 +135,13 @@ function fullName(candidate: any) {
   return String(candidate?.fullName ?? "Candidate").trim() || "Candidate";
 }
 
-function salutationName(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : "Candidate";
+/** Honorific from the candidate's gender recorded at application time (Mr./Ms.). */
+function honorific(candidate: any): string {
+  const extra = parseJson(candidate?.additionalInfo);
+  const raw = String(extra?.gender ?? candidate?.gender ?? "").trim().toLowerCase();
+  if (raw.startsWith("m")) return "Mr.";
+  if (raw.startsWith("f") || raw.startsWith("w")) return "Mrs.";
+  return "";
 }
 
 function parseJson(value: unknown): Record<string, unknown> | null {
@@ -172,13 +174,13 @@ function extractSalaryStructureGrade(candidate: any): string | null {
   return match?.[1]?.toUpperCase() ?? null;
 }
 
-function buildOfferPdf(offer: any, application: any, candidate: any, job: any, dept: any, et: any): Promise<Buffer> {
+function buildOfferPdf(offer: any, application: any, candidate: any, job: any): Promise<Buffer> {
   return new Promise<Buffer>((resolve, reject) => {
     const issueDate = offer?.createdAt && !Number.isNaN(new Date(offer.createdAt).getTime()) ? new Date(offer.createdAt) : new Date();
     const ordinalIssue = ordinalDate(issueDate);
     const reference = appointmentReference(offer, issueDate);
     const name = fullName(candidate);
-    const last = salutationName(name);
+    const hon = honorific(candidate);
     const addressLines = candidateAddress(candidate);
     const designation = String(offer?.designation ?? job?.title ?? "Designation to be assigned").trim();
     const grade = extractSalaryStructureGrade(offer) ?? "_____";
@@ -256,7 +258,7 @@ function buildOfferPdf(offer: any, application: any, candidate: any, job: any, d
     y = 162;
     doc.font("Helvetica").fontSize(10.2).fillColor(ink).text("To,", left, y);
     y += 14;
-    doc.font("Helvetica-Bold").fontSize(10.5).text(name, left, y);
+    doc.font("Helvetica-Bold").fontSize(10.5).text([hon, name].filter(Boolean).join(" "), left, y);
     for (const line of addressLines) {
       y += 14;
       doc.font("Helvetica").fontSize(9.5).text(line, left, y, { width: bodyWidth });
@@ -268,7 +270,11 @@ function buildOfferPdf(offer: any, application: any, candidate: any, job: any, d
 
     // Salutation
     y += 30;
-    doc.font("Helvetica").fontSize(10.2).text(`Dear ${last},`, left, y);
+    doc.font("Helvetica").fontSize(10.2).text(`Dear ${[hon, name].filter(Boolean).join(" ")},`, left, y);
+
+    // Candidate and application identifiers
+    y += 14;
+    doc.font("Helvetica").fontSize(8.6).fillColor(muted).text(`Candidate ID: ${candidate?.candidateCode ?? "—"}   |   Application ID: ${application?.applicationCode ?? "—"}`, left, y, { width: bodyWidth });
 
     // Introduction
     y += 24;
@@ -306,22 +312,20 @@ function buildOfferPdf(offer: any, application: any, candidate: any, job: any, d
     y = doc.y + 14;
     doc.text("Looking forward to our long-term professional relationship.", left, y, { width: bodyWidth });
 
-    // Signature block
+    // Signature block — digital stamp sits on the left, above the signature line.
     y = doc.y + 28;
 
     doc.font("Helvetica-Bold").fontSize(10).fillColor(greenDark).text("Faithfully yours,", left, y);
     doc.text(`For ${companyLegal}`, left, y + 17);
-    doc.roundedRect(left + 165, y + 24, 150, 46, 6).lineWidth(1.4).strokeColor(green).stroke();
-    doc.font("Helvetica-Bold").fontSize(7).fillColor(greenDark).text("DIGITALLY SIGNED", left + 190, y + 31, { width: 100, align: "center" });
-    doc.font("Helvetica-BoldOblique").fontSize(13).fillColor("#14532d").text("EMC Authorised", left + 171, y + 44, { width: 140, align: "center" });
-    doc.font("Helvetica").fontSize(6).fillColor(greenDark).text(`Date: ${ordinalIssue}`, left + 175, y + 59, { width: 130, align: "center" });
-    doc.moveTo(left, y + 84).lineTo(left + 150, y + 84).lineWidth(0.6).strokeColor(ink).stroke();
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(ink).text("________________________", left, y + 62, { width: 160, lineBreak: false });
-    doc.text("________________________", left, y + 78, { width: 160, lineBreak: false });
-    doc.font("Helvetica").fontSize(9).text("Authorized Signatory", left, y + 90);
-    doc.font("Helvetica").fontSize(9).fillColor(ink).text("Authorized Signatory Name", left, y + 104);
-    doc.font("Helvetica").fontSize(9).fillColor(ink).text("Authorized Signatory Designation", left, y + 118);
-    doc.font("Helvetica-Bold").fontSize(9).text("Encl.: As above", left, y + 142);
+    doc.roundedRect(left, y + 38, 160, 44, 6).lineWidth(1.4).strokeColor(green).stroke();
+    doc.font("Helvetica-Bold").fontSize(6.6).fillColor(greenDark).text("DIGITALLY SIGNED", left + 8, y + 45, { width: 144, align: "center" });
+    doc.font("Helvetica-BoldOblique").fontSize(13.5).fillColor("#14532d").text("EMC Authorised", left + 8, y + 56, { width: 144, align: "center" });
+    doc.font("Helvetica").fontSize(6).fillColor(greenDark).text(`Date: ${ordinalIssue}`, left + 8, y + 71, { width: 144, align: "center" });
+    doc.moveTo(left, y + 102).lineTo(left + 150, y + 102).lineWidth(0.6).strokeColor(ink).stroke();
+    doc.font("Helvetica").fontSize(9).fillColor(ink).text("Authorized Signatory", left, y + 106);
+    doc.text("Authorized Signatory Name", left, y + 120);
+    doc.text("Authorized Signatory Designation", left, y + 134);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(ink).text("Encl.: As above", left, y + 158);
 
     const pageCount = (doc as any).bufferedPageCount ?? 1;
     for (let i = 0; i < pageCount; i += 1) {
@@ -376,6 +380,7 @@ router.post(
     const { applicationId } = parsed.data;
     const app = await prisma.application.findUnique({ where: { id: applicationId }, include: { candidate: true, jobOpening: true } });
     if (!app) throw ApiError.notFound("Application not found.");
+    if (!app.adminApprovedAt) throw ApiError.badRequest("This candidate has not been approved by the admin yet. The offer letter can only be prepared after admin approval.");
     const existing = await prisma.offerLetter.findUnique({ where: { applicationId } });
     if (existing) throw ApiError.conflict("An offer letter already exists for this application.");
     const data: Record<string, unknown> = { ...parsed.data, status: parsed.data.status ?? OFFER_STATUS.DRAFT, createdById: req.auth!.subjectId };
@@ -404,6 +409,7 @@ router.patch(
     const offer = await prisma.offerLetter.findUnique({ where: { id } });
     if (!offer) throw ApiError.notFound("Offer letter not found.");
     const updated = await prisma.offerLetter.update({ where: { id }, data: { ...parsed.data } as any, include: { department: true, employmentType: true } });
+    await cache.offersChanged();
     await logAudit(req, { action: "OFFER_UPDATE", entityType: "OfferLetter", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
     return ok(res, { item: updated });
   }),
@@ -419,7 +425,7 @@ router.post(
       include: { application: { include: { candidate: true, jobOpening: true } }, department: true, employmentType: true },
     });
     if (!offer) throw ApiError.notFound("Offer letter not found.");
-    const pdf = await buildOfferPdf(offer, offer.application, offer.application.candidate, offer.application.jobOpening, offer.department, offer.employmentType);
+    const pdf = await buildOfferPdf(offer, offer.application, offer.application.candidate, offer.application.jobOpening);
     const file = await storeFile({ buffer: pdf, originalName: `offer_${offer.application.applicationCode}.pdf`, mimeType: "application/pdf", ownerType: "CANDIDATE", ownerId: offer.application.candidateId, uploadedById: req.auth!.subjectId, bucket: STORAGE_BUCKETS.OFFERS, visibility: "PRIVATE" });
     const updated = await prisma.offerLetter.update({ where: { id }, data: { pdfFileId: file.id } });
     await logAudit(req, { action: "OFFER_PDF_GENERATE", entityType: "OfferLetter", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
@@ -441,17 +447,18 @@ router.post(
     const pdfBuffer = await readStoredFile(offer.pdfFile!);
     const respondToken = signPurposeToken({ offerId: offer.id, candidateId: offer.application.candidateId }, "OFFER_RESPONSE", "7d");
     const respondLink = `${env.appUrl}/offer/respond?token=${respondToken}`;
-    const sendResult = await sendTemplateEmail({
+    void sendTemplateEmail({
       to: offer.application.candidate.email,
       templateKey: "offer_letter",
       data: { name: offer.application.candidate.fullName, jobTitle: offer.application.jobOpening.title, designation: offer.designation, department: offer.department?.name, ctc: offer.ctc, joiningDate: offer.joiningDate, workLocation: offer.workLocation, expiryDate: offer.expiryDate, link: respondLink },
       attachments: [{ filename: "offer_letter.pdf", content: pdfBuffer, contentType: "application/pdf" }],
       metadata: { offerId: offer.id, applicationId: offer.applicationId },
     });
-    if (!["SENT", "SIMULATED"].includes(sendResult.status)) {
-      throw ApiError.badRequest(`Could not send the offer email${sendResult.message ? `: ${sendResult.message}` : "."}`);
-    }
     await prisma.offerLetter.update({ where: { id }, data: { status: OFFER_STATUS.SENT, sentAt: new Date() } });
+    if (offer.application.status === APPLICATION_STATUS.SELECTED) {
+      await prisma.application.update({ where: { id: offer.applicationId }, data: { status: APPLICATION_STATUS.OFFER_SENT } });
+      await prisma.applicationStatusHistory.create({ data: { applicationId: offer.applicationId, fromStatus: APPLICATION_STATUS.SELECTED, toStatus: APPLICATION_STATUS.OFFER_SENT, changedById: req.auth!.subjectId, remarks: "Offer letter sent to the candidate." } });
+    }
     await notifyHrTeam({ type: "offer.sent", title: "Offer sent", body: `Offer sent to ${offer.application.candidate.fullName} for ${offer.designation}.`, entityType: "OfferLetter", entityId: id, excludeUserId: req.auth!.subjectId });
     await cache.offersChanged();
     await logAudit(req, { action: "OFFER_SEND", entityType: "OfferLetter", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
@@ -475,7 +482,7 @@ router.post(
     }
     const respondToken = signPurposeToken({ offerId: offer.id, candidateId: offer.application.candidateId }, "OFFER_RESPONSE", "7d");
     const respondLink = `${env.appUrl}/offer/respond?token=${respondToken}`;
-    const result = await sendTemplateEmail({
+    void sendTemplateEmail({
       to: offer.application.candidate.email,
       templateKey: "offer_reminder",
       data: {
@@ -488,9 +495,6 @@ router.post(
       },
       metadata: { offerId: offer.id, applicationId: offer.applicationId, reminder: true },
     });
-    if (!["SENT", "SIMULATED"].includes(result.status)) {
-      throw ApiError.badRequest(`Could not send the reminder email${result.message ? `: ${result.message}` : "."}`);
-    }
     await notifyCandidate(offer.application.candidateId, { type: "offer.reminder", title: "Reminder to respond to your offer", body: `Please respond to the offer for ${offer.designation}.`, entityType: "OfferLetter", entityId: offer.id });
     await notifyHrTeam({ type: "offer.reminder_sent", title: "Offer reminder sent", body: `Reminder sent to ${offer.application.candidate.fullName} for ${offer.designation}.`, entityType: "OfferLetter", entityId: id, excludeUserId: req.auth!.subjectId });
     await logAudit(req, { action: "OFFER_REMIND", entityType: "OfferLetter", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { candidateId: offer.application.candidateId, applicationId: offer.applicationId } });

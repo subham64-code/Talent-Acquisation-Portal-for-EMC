@@ -18,8 +18,6 @@ const PREFERENCES: Array<{ key: keyof typeof DEFAULT_PREFERENCES; title: string;
 const payloadOf = (response: any) => response?.data?.data ?? response?.data ?? {};
 
 export default function Settings() {
-  const [weights, setWeights] = useState<Record<string, number>>({ ...DEFAULT_WEIGHTS });
-  const [valid, setValid] = useState(true);
   const [form, setForm] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(DEFAULT_WEIGHTS).map(([key, value]) => [key, String(value)])));
   const [status, setStatus] = useState<any>({});
   const [loading, setLoading] = useState(true);
@@ -43,8 +41,6 @@ export default function Settings() {
         if (weightsResult.status === "fulfilled") {
           const payload = payloadOf(weightsResult.value);
           const nextWeights = payload.weights ?? DEFAULT_WEIGHTS;
-          setWeights({ ...DEFAULT_WEIGHTS, ...nextWeights });
-          setValid(Boolean(payload.valid ?? true));
           setForm(Object.fromEntries(Object.entries({ ...DEFAULT_WEIGHTS, ...nextWeights }).map(([key, value]) => [key, String(value)])));
         }
         if (statusResult.status === "fulfilled") setStatus(payloadOf(statusResult.value));
@@ -66,8 +62,6 @@ export default function Settings() {
       const response = await hrApi.updateSettingsWeights(payload);
       const saved = payloadOf(response);
       const savedWeights = saved.weights ?? payload;
-      setWeights({ ...DEFAULT_WEIGHTS, ...savedWeights });
-      setValid(true);
       setForm(Object.fromEntries(Object.entries({ ...DEFAULT_WEIGHTS, ...savedWeights }).map(([key, value]) => [key, String(value)])));
       setMessage("AI scoring weights saved.");
     } catch (err: any) {

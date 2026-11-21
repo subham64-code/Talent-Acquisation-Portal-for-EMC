@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, Copy, Download, ExternalLink, Eye, FileSearch, Mail, RefreshCw, Send, Trash2, XCircle } from "lucide-react";
+import { BellRing, Copy, Download, ExternalLink, Eye, FileSearch, Mail, RefreshCw, Send, Trash2 } from "lucide-react";
 import DataTable, { type Column } from "../../../components/DataTable";
 import Badge from "../../../components/ref/Badge";
 import PageHeader from "../../../components/ref/PageHeader";

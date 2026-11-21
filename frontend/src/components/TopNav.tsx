@@ -64,7 +64,7 @@ export default function TopNav({ onToggleMenu }: { onToggleMenu: () => void }) {
       </button>
 
       <div className="app-header__portal" role="status" aria-label="ECOMETRIX TALENT ACQUISITION PORTAL">
-        <span className="app-header__portal-title">ECOMETRIX&nbsp;&nbsp;<em>TALENT ACQUISITION</em>&nbsp;&nbsp;<i>PORTAL</i></span>
+        <span className="app-header__portal-title">ECOMETRIX TALENT ACQUISITION PORTAL</span>
       </div>
 
       <div className="app-header__spacer" />

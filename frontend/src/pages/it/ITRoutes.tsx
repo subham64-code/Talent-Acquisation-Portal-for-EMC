@@ -1,9 +1,13 @@
+import { lazy } from "react";
 import { Navigate, Routes, Route } from "react-router-dom";
 import ITLayout from "./ITLayout";
-import ITDashboard from "./ITDashboard";
-import ITUserControl from "./ITUserControl";
-import ITAuditLog from "./ITAuditLog";
-import ITSystemStatus from "./ITSystemStatus";
+
+// Keep the IT section out of the initial bundle; App-level Suspense shows the
+// loading fallback while a chunk is being fetched.
+const ITDashboard = lazy(() => import("./ITDashboard"));
+const ITUserControl = lazy(() => import("./ITUserControl"));
+const ITAuditLog = lazy(() => import("./ITAuditLog"));
+const ITSystemStatus = lazy(() => import("./ITSystemStatus"));
 
 export default function ITRoutes() {
   return (

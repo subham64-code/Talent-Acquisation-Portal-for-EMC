@@ -20,6 +20,7 @@ export default function Users() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [setupLink, setSetupLink] = useState("");
 
   const canManage = (user?.permissions || []).includes("users.manage");
   const canReset = (user?.permissions || []).includes("users.reset");
@@ -55,15 +56,21 @@ export default function Users() {
     setSaving(true);
     setError("");
     try {
-      await hrApi.createUser({
+      const result = await hrApi.createUser({
         name: form.name,
         email: form.email,
         roleIds: [form.roleId],
         departmentIds: form.departmentIds,
+        baseUrl: window.location.origin,
       });
       setShowCreate(false);
       setForm({ name: "", email: "", roleId: "", departmentIds: [] });
-      setMessage(`Invitation sent to ${form.email}. They always sign in with a one-time code emailed to them.`);
+      setSetupLink(result.data?.enrollmentLink || "");
+      if (result.data?.emailDelivered === false) {
+        setError("Account created, but the email was not delivered. Copy the setup link below and send it to the user.");
+      } else {
+        setMessage(`Account created for ${form.email}. An authenticator setup link has been emailed to them.`);
+      }
       load();
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not invite the user.");
@@ -83,39 +90,35 @@ export default function Users() {
     }
   };
 
-  const resetUser = async (item: any) => {
-    const reason = window.prompt(`Reset ${item.name}? All sessions and pending OTPs will be revoked.`, "Reset by administrator");
-    if (reason === null) return;
+  const totpLabel = (item: any) => {
+    if (item.totpEnabled) return `Active${item.totpEnabledAt ? ` · ${new Date(item.totpEnabledAt).toLocaleDateString()}` : ""}`;
+    if (item.totpEnrollmentPending) return "Setup pending";
+    return "Not enrolled";
+  };
+
+  const resetTotp = async (item: any) => {
     setError("");
     try {
-      await hrApi.resetUser(item.id, { reason, deactivate: true });
-      setMessage(`${item.name} has been reset and deactivated.`);
-      load();
+      const result = await hrApi.resetTotp(item.id, window.location.origin);
+      setUsers(users.map((x) => (x.id === item.id ? { ...x, totpEnabled: false, totpEnrollmentPending: true, totpEnabledAt: null } : x)));
+      setSetupLink(result.data?.enrollmentLink || "");
+      if (result.data?.emailDelivered === false) {
+        setError("TOTP reset, but the email was not delivered. Copy the setup link below and send it to the user.");
+      } else {
+        setMessage(`TOTP reset for ${item.name}. A new single-use setup link was emailed to ${item.email}.`);
+      }
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Reset failed.");
+      setError(err.response?.data?.error?.message || "Could not reset TOTP.");
     }
   };
 
-  const restoreUser = async (item: any) => {
+  const revokeSessions = async (item: any) => {
     setError("");
     try {
-      await hrApi.restoreUser(item.id);
-      setMessage(`${item.name} restored.`);
-      load();
+      await hrApi.revokeAllSessions(item.id);
+      setMessage(`All active sessions for ${item.name} were revoked.`);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Restore failed.");
-    }
-  };
-
-  const enablePassword = async (item: any) => {
-    const password = window.prompt(`Set a password for ${item.name} (min 8 chars, letters + numbers):`);
-    if (!password) return;
-    setError("");
-    try {
-      await hrApi.setUserPassword(item.id, password);
-      setMessage(`Password sign-in enabled for ${item.name}.`);
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not set the password.");
+      setError(err.response?.data?.error?.message || "Could not revoke sessions.");
     }
   };
 
@@ -157,6 +160,21 @@ export default function Users() {
         </div>
       )}
 
+      {setupLink && (
+        <div className="notice notice--info" role="status">
+          <div className="notice__body">
+            <div className="notice__title">One-time authenticator setup link</div>
+            <p className="text-[11px] ink-soft mt-1">Valid 10 minutes, usable once. Send this to the HR user if they did not receive the email.</p>
+            <div className="flex flex-col sm:flex-row gap-2 mt-2">
+              <input readOnly value={setupLink} onFocus={(e) => e.currentTarget.select()} className="flex-1 min-w-0 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[11px] font-mono ink-body" />
+              <button type="button" onClick={() => { void navigator.clipboard?.writeText(setupLink); }} className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-xs font-semibold ink-body hover:bg-gray-50">Copy link</button>
+              <a href={setupLink} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--border-strong)] bg-white px-3 py-2 text-xs font-semibold ink-body hover:bg-gray-50 text-center">Open</a>
+            </div>
+            <button type="button" onClick={() => setSetupLink("")} className="text-xs ink-soft hover:underline mt-2">Dismiss</button>
+          </div>
+        </div>
+      )}
+
       <div className="hr-team-layout">
         <section className="card">
           <div className="card__header">
@@ -174,6 +192,7 @@ export default function Users() {
                   <th>Role</th>
                   <th>Departments</th>
                   <th>Status</th>
+                  <th>Authenticator</th>
                 </tr>
               </thead>
               <tbody>
@@ -191,7 +210,7 @@ export default function Users() {
                     <td>
                       <div className="flex flex-wrap gap-1">
                         {(item.roles ?? []).map((role: any) => (
-                          <span key={role.id} className="badge badge--grey">
+                          <span key={role.role?.id || role.role?.key} className="badge badge--grey">
                             {role.role?.name || role.role?.key}
                           </span>
                         ))}
@@ -206,11 +225,14 @@ export default function Users() {
                     <td>
                       <StatusPill status={item.isActive ? "ACTIVE" : "INACTIVE"} />
                     </td>
+                    <td>
+                      <span className="badge badge--grey">{totpLabel(item)}</span>
+                    </td>
                   </tr>
                 ))}
                 {!loading && users.length === 0 && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={5}>
                       <div className="empty-state">No HR users yet.</div>
                     </td>
                   </tr>
@@ -232,38 +254,32 @@ export default function Users() {
               <div key={item.id} className="permission-row">
                 <div>
                   <strong>{item.name}</strong>
-                  <span>
-                    {item.isActive ? "Active" : "Inactive"}
-                    {item.lastLoginAt ? ` · last login ${new Date(item.lastLoginAt).toLocaleDateString()}` : " · never signed in"}
-                  </span>
-                </div>
-                <div className="table-actions">
-                  {canManage && (
-                    <button type="button" className="icon-action" onClick={() => toggleActive(item)}>
-                      {item.isActive ? "Deactivate" : "Activate"}
-                    </button>
-                  )}
-                   {canReset && (
-                     <>
-                       <button type="button" className="icon-action" onClick={() => resetUser(item)}>
-                         Reset
-                       </button>
-                       {!item.isActive && (
-                         <button type="button" className="icon-action icon-action--success" onClick={() => restoreUser(item)}>
-                           Restore
-                         </button>
-                       )}
-                       {(item.roles ?? []).some((r: any) => r.role?.key === "IT_ADMIN") && (
-                         <button type="button" className="icon-action" onClick={() => enablePassword(item)}>
-                           Set password
-                         </button>
-                       )}
-                     </>
+                   <span>
+                     {item.isActive ? "Active" : "Inactive"}
+                     {item.lastLoginAt ? ` · last login ${new Date(item.lastLoginAt).toLocaleDateString()}` : " · never signed in"}
+                     {` · TOTP ${totpLabel(item)}`}
+                   </span>
+                 </div>
+                 <div className="table-actions">
+                   {canManage && (
+                     <button type="button" className="icon-action" onClick={() => toggleActive(item)}>
+                       {item.isActive ? "Deactivate" : "Activate"}
+                     </button>
                    )}
-                </div>
+                   {canReset && (
+                     <button type="button" className="icon-action" onClick={() => resetTotp(item)}>
+                       {item.totpEnabled ? "Reset TOTP" : "Send setup link"}
+                     </button>
+                   )}
+                   {canReset && (
+                     <button type="button" className="icon-action" onClick={() => revokeSessions(item)}>
+                       Revoke sessions
+                     </button>
+                   )}
+                 </div>
               </div>
             ))}
-            {!canManage && !canReset && (
+            {!canManage && (
               <div className="empty-state">Your role cannot modify HR accounts.</div>
             )}
           </div>
@@ -298,7 +314,7 @@ export default function Users() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Add HR user"
-        subtitle="Creates the account and emails sign-in instructions. HR users always sign in with a one-time code — passwords are not used."
+        subtitle="Creates the account and emails a single-use authenticator setup link. HR users sign in with their email and a TOTP code — no password."
         size="lg"
          footer={
           <>

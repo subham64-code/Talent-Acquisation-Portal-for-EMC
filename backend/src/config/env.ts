@@ -50,21 +50,35 @@ export const env = {
   port: num("PORT", 4000),
   appName: str("APP_NAME", "EMC Talent Acquisition Portal"),
   appUrl: str("APP_URL", "http://localhost:5173"),
+  careerSiteUrl: str("CAREER_SITE_URL", "http://localhost:5000/careers.html"),
+  trackApplicationUrl: str("TRACK_APPLICATION_URL", "http://localhost:5000/track-application.html"),
   apiUrl: str("API_URL", "http://localhost:4000"),
   publicApiUrl: str("PUBLIC_API_URL", "http://localhost:4000"),
-  corsOrigins: str("CORS_ORIGINS", "http://localhost:5173")
+  corsOrigins: str("CORS_ORIGINS", "http://localhost:5173,http://localhost:5000")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
   defaultTimezone: str("DEFAULT_TIMEZONE", "Asia/Kolkata"),
 
   databaseUrl: str("DATABASE_URL", ""),
+  // auto (probe tcp -> ws -> http), tcp, ws or http. See lib/prisma.ts.
+  dbTransport: str("DB_TRANSPORT", "auto").toLowerCase(),
 
   jwtSecret: str(
     "JWT_SECRET",
     isProd ? "" : "emc-dev-only-secret-change-me-please-0123456789abcdef",
   ),
   jwtExpiresIn: str("JWT_EXPIRES_IN", "12h"),
+
+  // TOTP (RFC 6238) — HR roles sign in with email + authenticator code.
+  // AES-256-GCM key used to encrypt TOTP secrets at rest (base64, 32 bytes).
+  totpEncryptionKey: str("TOTP_ENCRYPTION_KEY", ""),
+  totpIssuer: str("TOTP_ISSUER", "Ecometrix"),
+  totpWindowSeconds: num("TOTP_WINDOW_SECONDS", 30),
+  totpEnrollmentTtlMinutes: num("TOTP_ENROLLMENT_TTL_MINUTES", 10),
+  totpMaxAttempts: num("TOTP_MAX_ATTEMPTS", 5),
+  totpLockoutMinutes: num("TOTP_LOCKOUT_MINUTES", 15),
+
   otpTtlMinutes: num("OTP_TTL_MINUTES", 5),
   otpMaxAttempts: num("OTP_MAX_ATTEMPTS", 5),
   otpResendCooldownSeconds: num("OTP_RESEND_COOLDOWN_SECONDS", 60),
@@ -83,6 +97,7 @@ export const env = {
   smtpHost: str("SMTP_HOST", ""),
   smtpPort: num("SMTP_PORT", 587),
   smtpSecure: bool("SMTP_SECURE", false),
+  smtpRejectUnauthorized: bool("SMTP_REJECT_UNAUTHORIZED", true),
   smtpUser: str("SMTP_USER", ""),
   smtpPass: str("SMTP_PASS", ""),
   mailFrom: str("MAIL_FROM", "EMC Talent Acquisition <no-reply@emc.example>"),
@@ -90,6 +105,7 @@ export const env = {
 
   aiWeights,
   aiWeightsValid: weightTotal === 100,
+  aiScoringVersion: str("AI_SCORING_VERSION", "v1"),
   ocrEnabled: bool("OCR_ENABLED", true),
   ocrLanguages: str("OCR_LANGUAGES", "eng"),
   aiTopRecommendations: num("AI_TOP_RECOMMENDATIONS", 10),
@@ -124,7 +140,19 @@ if (isProd) {
   if (!env.databaseUrl) {
     throw new Error("DATABASE_URL is required.");
   }
+  if (!env.totpEncryptionKey) {
+    throw new Error("TOTP_ENCRYPTION_KEY is required (base64-encoded 32-byte key).");
+  }
   if (!env.aiWeightsValid) {
     throw new Error("AI weight configuration must total 100.");
+  }
+  if (env.corsOrigins.some((origin) => origin === "*" || /localhost|127\.0\.0\.1/.test(origin))) {
+    throw new Error("CORS_ORIGINS must contain deployed HTTPS origins only.");
+  }
+  if ([env.appUrl, env.apiUrl, env.careerSiteUrl, env.trackApplicationUrl].some((url) => /localhost|127\.0\.0\.1/.test(url))) {
+    throw new Error("APP_URL, API_URL, CAREER_SITE_URL and TRACK_APPLICATION_URL must use deployed URLs.");
+  }
+  if (env.storageProvider === "s3" && !env.storageAllowLocal && (!env.s3Bucket || !env.s3AccessKeyId || !env.s3SecretAccessKey)) {
+    throw new Error("S3 bucket and credentials are required in production when STORAGE_PROVIDER=s3.");
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BellRing, CheckCircle2, FileSearch, FileText, Plus, RefreshCw, Search, Send, XCircle } from "lucide-react";
+import { BellRing, FileSearch, FileText, Pencil, Plus, RefreshCw, Search, Send } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import { useInvalidate } from "../../hooks/useApiQuery";
 import DataTable, { type Column } from "../../components/DataTable";
@@ -9,7 +9,6 @@ import Button from "../../components/ref/Button";
 import Badge from "../../components/ref/Badge";
 import EmptyState from "../../components/ref/EmptyState";
 import Modal from "../../components/ref/Modal";
-import CandidateStatusBadge from "../../components/ref/CandidateStatusBadge";
 import { Select, Input, Textarea } from "../../components/ref/Input";
 import { formatDate, initials } from "./databank/shared";
 
@@ -34,9 +33,9 @@ export default function Offers() {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-
   const [formOpen, setFormOpen] = useState(false);
-  const [preselectId, setPreselectId] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [, setPreselectId] = useState("");
   const [form, setForm] = useState<Record<string, string>>({ status: "DRAFT" });
   const [saving, setSaving] = useState(false);
   const [sendTarget, setSendTarget] = useState<any>(null);
@@ -46,8 +45,6 @@ export default function Offers() {
   const [busy, setBusy] = useState(false);
 
   const invalidate = useInvalidate();
-  const formatSalary = (value: any) => value != null ? `₹ ${Number(value).toLocaleString()}` : "—";
-
 
   const parseJsonSafe = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== "string") return null;
@@ -85,9 +82,12 @@ export default function Offers() {
     return lines.length ? lines : ["Address available with HR"];
   };
 
-  const salutationName = (name?: string) => {
-    const parts = String(name ?? "Candidate").trim().split(/\s+/).filter(Boolean);
-    return parts.length ? parts[parts.length - 1] : "Candidate";
+  const honorificOf = (candidate: any) => {
+    const extra = parseJsonSafe(candidate?.additionalInfo);
+    const raw = String(extra?.gender ?? candidate?.gender ?? "").trim().toLowerCase();
+    if (raw.startsWith("m")) return "Mr.";
+      if (raw.startsWith("f") || raw.startsWith("w")) return "Mrs.";
+    return "";
   };
 
   const deriveGrade = (offer: any) => {
@@ -115,7 +115,7 @@ export default function Offers() {
     if (!silent) setLoading(true);
     Promise.all([
       hrApi.offers({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? r?.data ?? []).catch(() => []),
-      hrApi.applications({ page: 1, pageSize: 100, status: "SELECTED" }).then((r: any) => r?.data?.items ?? []).catch(() => []),
+      hrApi.applications({ page: 1, pageSize: 100, status: "SELECTED", full: 1 }).then((r: any) => r?.data?.items ?? []).catch(() => []),
       hrApi.employmentTypes({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? r?.data ?? []).catch(() => []),
     ])
       .then(([offerRows, selected, employmentTypes]) => {
@@ -132,20 +132,29 @@ export default function Offers() {
   }, []);
 
   const offeredApplicationIds = useMemo(() => new Set(items.map((o: any) => o.applicationId).filter(Boolean)), [items]);
-  const eligibleApplications = useMemo(() => applications.filter((a: any) => !offeredApplicationIds.has(a.id)), [applications, offeredApplicationIds]);
+  const editingApplication = editingId ? items.find((offer: any) => offer.id === editingId)?.application : null;
+  const eligibleApplications = useMemo(() => {
+    const base = applications.filter((a: any) => !offeredApplicationIds.has(a.id) && Boolean(a.adminApprovedAt));
+    if (editingApplication && !base.some((a: any) => a.id === editingApplication.id)) return [editingApplication, ...base];
+    return base;
+  }, [applications, offeredApplicationIds, editingApplication]);
 
   const counts = {
     draft: items.filter((o) => o.status === "DRAFT").length,
     pending: items.filter((o) => o.status === "SENT" || o.status === "VIEWED").length,
     accepted: items.filter((o) => o.status === "ACCEPTED").length,
     declined: items.filter((o) => o.status === "DECLINED").length,
+    hold: items.filter((o) => o.application?.status === "ON_HOLD" || o.status === "EXPIRED").length,
     all: items.length,
   };
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return items.filter((offer) => {
-      const matchesStatus = !statusFilter || (statusFilter === "PENDING" ? ["SENT", "VIEWED"].includes(offer.status) : offer.status === statusFilter);
+      const matchesStatus = !statusFilter
+        || (statusFilter === "PENDING" ? ["SENT", "VIEWED"].includes(offer.status)
+          : statusFilter === "HOLD" ? (offer.application?.status === "ON_HOLD" || offer.status === "EXPIRED")
+          : offer.status === statusFilter);
       if (!matchesStatus) return false;
       if (!term) return true;
       return [offer.application?.candidate?.fullName, offer.application?.candidate?.email, offer.application?.jobOpening?.title, offer.designation, offer.application?.applicationCode]
@@ -165,10 +174,32 @@ export default function Offers() {
   }, [form.applicationId, applications]);
 
   const openCreate = (applicationId = "") => {
+    setEditingId("");
     setForm({ status: "DRAFT", applicationId });
     setPreselectId(applicationId);
     setFormOpen(true);
     setNotice("");
+  };
+
+  const openEdit = (offer: any) => {
+    const dateValue = (value: any) => value ? new Date(value).toISOString().slice(0, 10) : "";
+    setEditingId(offer.id);
+    setForm({
+      status: offer.status ?? "DRAFT",
+      applicationId: offer.applicationId ?? "",
+      designation: offer.designation ?? "",
+      ctc: offer.ctc != null ? String(offer.ctc) : "",
+      employmentTypeId: offer.employmentTypeId ?? "",
+      joiningDate: dateValue(offer.joiningDate),
+      workLocation: offer.workLocation ?? "",
+      expiryDate: dateValue(offer.expiryDate),
+      additionalConditions: offer.additionalConditions ?? "",
+      salaryStructure: offer.salaryStructure ?? "",
+    });
+    setPreselectId(offer.applicationId ?? "");
+    setFormOpen(true);
+    setNotice("");
+    setError("");
   };
 
   const submit = async (e: FormEvent) => {
@@ -197,13 +228,19 @@ export default function Offers() {
     setSaving(true);
     setError("");
     try {
-      await hrApi.createOffer({
+      const payload = {
         ...form,
         applicationId: form.applicationId,
         ctc: form.ctc ? Number(form.ctc) : undefined,
-      });
+      };
+      if (editingId) {
+        await hrApi.updateOffer(editingId, payload);
+        setNotice("Offer updated. Generate the revised PDF and share it with the candidate.");
+      } else {
+        await hrApi.createOffer(payload);
+        setNotice("Offer letter created as a draft.");
+      }
       setFormOpen(false);
-      setNotice("Offer letter created as a draft.");
       invalidate(["offers", "applications", "dashboard"]);
       load(true);
     } catch (err: any) {
@@ -223,26 +260,15 @@ export default function Offers() {
     } catch (err: any) { setError(err.response?.data?.error?.message || "PDF generation failed."); } finally { setBusy(false); }
   };
 
-  const openPdf = async (fileId?: string) => {
-    if (!fileId) return;
-    try {
-      const r = await hrApi.fileAccessToken(fileId);
-      const token = r?.data?.token;
-      if (token) {
-        const blobRes = await hrApi.file(fileId, token);
-        const url = URL.createObjectURL(blobRes.data as Blob);
-        setPreviewing({ url, name: "Offer letter" });
-      } else {
-        setPreviewing({ url: r?.data?.url, name: "Offer letter" });
-      }
-    } catch { setError("Could not open the offer letter."); }
-  };
-
   const confirmSend = async () => {
     if (!sendTarget) return;
     setBusy(true);
     setError("");
     try {
+      // The offer email carries the PDF — generate it first when it does not exist yet.
+      if (!sendTarget.pdfFileId) {
+        await hrApi.generateOfferPdf(sendTarget.id);
+      }
       await hrApi.sendOffer(sendTarget.id);
       setNotice(`The offer email for ${sendTarget.application?.candidate?.fullName} was sent.`);
       setSendTarget(null);
@@ -267,7 +293,7 @@ export default function Offers() {
     { key: "position", header: "Position", render: (o) => <div><div>{o.application?.jobOpening?.title}</div><div className="cell-muted">{o.designation}</div></div> },
     { key: "ctc", header: "CTC", render: (o) => o.ctc != null ? `₹ ${Number(o.ctc).toLocaleString()}` : "—" },
     { key: "joining", header: "Joining", render: (o) => <span className="cell-muted">{formatDate(o.joiningDate)}</span> },
-    { key: "expiry", header: "Expiry", render: (o) => <span className="cell-muted">{formatDate(o.expiryDate)}</span> },
+    { key: "expiry", header: "Expiry", render: (o) => <div><span className="cell-muted">{formatDate(o.expiryDate)}</span>{["SENT", "VIEWED"].includes(o.status) && o.sentAt && <div className="cell-muted">{Math.min(7, Math.floor((Date.now() - new Date(o.sentAt).getTime()) / 86400000) + 1)} of 7 days to respond</div>}</div> },
     { key: "status", header: "Status", render: (o) => { const meta = OFFER_META[o.status] ?? (o.status === "PENDING" ? OFFER_META.PENDING : { label: o.status, variant: "grey" as const }); return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
     { key: "response", header: "Candidate response", render: (o) => o.responseRemarks ? <div className="offer-response" title={o.responseRemarks}><span>{o.responseRemarks}</span>{o.respondedAt && <small>{formatDate(o.respondedAt)}</small>}</div> : <span className="cell-muted">—</span> },
     {
@@ -276,10 +302,11 @@ export default function Offers() {
       className: "text-right",
       render: (o) => (
         <div className="cell-actions">
+          <button type="button" className="btn btn--ghost btn--icon" title="Edit offer" aria-label="Edit offer" onClick={() => openEdit(o)}><Pencil size={16} /></button>
           <button type="button" className="btn btn--ghost btn--icon" title="Preview appointment letter" aria-label="Preview appointment letter" onClick={() => setLetterPreview(o)}><FileSearch size={16} /></button>
           {!o.pdfFileId && <button type="button" className="btn btn--outline btn--sm" title="Generate PDF" aria-label="Generate PDF" onClick={() => void generatePdf(o.id)} disabled={busy}>Generate PDF</button>}
-          {o.pdfFileId && <button type="button" className="btn btn--outline btn--sm" title="Open PDF" aria-label="Open PDF" onClick={() => void openPdf(o.pdfFileId)} disabled={busy}>Open PDF</button>}
-          {o.pdfFileId && o.status === "DRAFT" && <button type="button" className="btn btn--primary btn--sm" title="Send offer" aria-label="Send offer" onClick={() => setSendTarget(o)}>Send Offer</button>}
+          {o.pdfFileId && <button type="button" className="btn btn--outline btn--sm" title={o.status === "DRAFT" ? "Generate PDF" : "Regenerate PDF with the latest details"} aria-label="Regenerate PDF" onClick={() => void generatePdf(o.id)} disabled={busy}>Regenerate PDF</button>}
+          {o.pdfFileId && ["DRAFT", "SENT", "VIEWED"].includes(o.status) && <button type="button" className="btn btn--primary btn--sm" title="Share offer with candidate" aria-label="Share offer" onClick={() => setSendTarget(o)}>{o.status === "DRAFT" ? "Send Offer" : "Share Offer"}</button>}
           {["SENT", "VIEWED"].includes(o.status) && <button type="button" className="btn btn--outline btn--sm" title="Send offer reminder" aria-label="Send offer reminder" onClick={() => setRemindTarget(o)}>Remind</button>}
         </div>
       ),
@@ -319,12 +346,13 @@ export default function Offers() {
         <div className="ta-interview-summary__item"><span className="ta-interview-summary__label">Pending response</span><span className="ta-interview-summary__value">{counts.pending}</span></div>
         <div className="ta-interview-summary__item"><span className="ta-interview-summary__label">Accepted</span><span className="ta-interview-summary__value">{counts.accepted}</span></div>
         <div className="ta-interview-summary__item"><span className="ta-interview-summary__label">Declined</span><span className="ta-interview-summary__value">{counts.declined}</span></div>
+        <div className="ta-interview-summary__item"><span className="ta-interview-summary__label">Hold</span><span className="ta-interview-summary__value">{counts.hold}</span></div>
       </div>
 
       <div className="page-toolbar">
         <div className="search-box"><span className="search-box__icon"><Search size={16} aria-hidden="true" /></span><input type="search" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by candidate, application ID or position" aria-label="Search offers" /></div>
         <div className="filters">
-          {["", "DRAFT", "PENDING", "ACCEPTED", "DECLINED"].map((value) => <button type="button" key={value || "all"} className={`ta-filter-chip ${statusFilter === value ? "active" : ""}`} onClick={() => setStatusFilter(value)}>{value ? (OFFER_META[value]?.label ?? value) : "All"} <span className="ta-filter-chip__count">{value === "" ? counts.all : value === "PENDING" ? counts.pending : items.filter((o) => o.status === value).length}</span></button>)}
+          {["", "DRAFT", "PENDING", "ACCEPTED", "DECLINED", "HOLD"].map((value) => <button type="button" key={value || "all"} className={`ta-filter-chip ${statusFilter === value ? "active" : ""}`} onClick={() => setStatusFilter(value)}>{value ? (value === "HOLD" ? "Hold" : OFFER_META[value]?.label ?? value) : "All"} <span className="ta-filter-chip__count">{value === "" ? counts.all : value === "PENDING" ? counts.pending : value === "HOLD" ? counts.hold : items.filter((o) => o.status === value).length}</span></button>)}
         </div>
       </div>
 
@@ -340,10 +368,10 @@ export default function Offers() {
       <Modal
         open={formOpen}
         onClose={() => (saving ? undefined : setFormOpen(false))}
-        title="Create Offer Letter"
-        subtitle="The offer is saved as a draft until HR explicitly sends it"
+        title={editingId ? "Edit Offer Letter" : "Create Offer Letter"}
+        subtitle={editingId ? "After saving, regenerate the PDF and share the revised letter with the candidate" : "The offer is saved as a draft until HR explicitly sends it"}
         size="lg"
-        footer={<><Button variant="outline" onClick={() => setFormOpen(false)} disabled={saving}>Cancel</Button><Button type="submit" form="offer-form" loading={saving}>Create draft offer</Button></>}
+        footer={<><Button variant="outline" onClick={() => setFormOpen(false)} disabled={saving}>Cancel</Button><Button type="submit" form="offer-form" loading={saving}>{editingId ? "Save changes" : "Create draft offer"}</Button></>}
       >
         <form id="offer-form" onSubmit={submit}>
           <div className="form-grid">
@@ -356,7 +384,6 @@ export default function Offers() {
             <Select label="Employment Type" value={form.employmentTypeId || ""} onChange={(e) => setForm((p) => ({ ...p, employmentTypeId: e.target.value }))} placeholder="Select employment type" options={types.map((t: any) => ({ value: t.id, label: t.name }))} />
             <Input label="Joining Date" type="date" value={form.joiningDate || ""} onChange={(e) => setForm((p) => ({ ...p, joiningDate: e.target.value }))} />
             <Input label="Work Location" value={form.workLocation || ""} onChange={(e) => setForm((p) => ({ ...p, workLocation: e.target.value }))} placeholder="e.g. Bhubaneswar" />
-            <Input label="Reporting To" value={form.reportingTo || ""} onChange={(e) => setForm((p) => ({ ...p, reportingTo: e.target.value }))} placeholder="e.g. Engineering Manager" />
             <Input label="Offer Expiry" type="date" value={form.expiryDate || ""} onChange={(e) => setForm((p) => ({ ...p, expiryDate: e.target.value }))} />
             <div className="field field--full"><Textarea label="Additional Conditions" value={form.additionalConditions || ""} onChange={(e) => setForm((p) => ({ ...p, additionalConditions: e.target.value }))} placeholder="Add conditions, probation, notice period…" rows={3} /></div>
           </div>
@@ -370,7 +397,7 @@ export default function Offers() {
         size="sm"
         footer={<><Button variant="outline" onClick={() => setSendTarget(null)} disabled={busy}>Cancel</Button><Button icon={Send} onClick={confirmSend} loading={busy}>Send offer</Button></>}
       >
-        <p>{sendTarget ? `The offer letter for ${sendTarget.application?.candidate?.fullName} will be sent by email. SMTP or simulated delivery is applied according to the environment configuration and logged.` : "The offer will be sent."}</p>
+        <p>{sendTarget ? `Sure you want to send the offer to ${sendTarget.application?.candidate?.fullName}?` : "The offer will be sent."}</p>
       </Modal>
 
       <Modal
@@ -402,14 +429,17 @@ export default function Offers() {
           <>
             <span className="modal__footer-note">The preview is generated from the stored offer record.</span>
             <Button variant="outline" onClick={() => setLetterPreview(null)}>Close</Button>
-            <Button icon={FileText} onClick={() => void openPdf(letterPreview.pdfFileId)} loading={busy}>Open PDF</Button>
+            <Button variant="outline" icon={RefreshCw} onClick={() => void generatePdf(letterPreview.id)} loading={busy}>{letterPreview.pdfFileId ? "Regenerate PDF" : "Generate PDF"}</Button>
+            <Button icon={Send} disabled={!letterPreview.pdfFileId} onClick={() => { const target = letterPreview; setLetterPreview(null); setSendTarget(target); }}>Send PDF to candidate</Button>
           </>
         ) : undefined}
       >
         {letterPreview && (() => {
             const issueDate = letterPreview?.createdAt ? new Date(letterPreview.createdAt) : new Date();
-            const name = letterPreview?.application?.candidate?.fullName || "Candidate";
-            const addressLines = deriveCandidateAddress(letterPreview?.application?.candidate);
+            const candidate = letterPreview?.application?.candidate;
+            const name = candidate?.fullName || "Candidate";
+            const hon = honorificOf(candidate);
+            const addressLines = deriveCandidateAddress(candidate);
             return (
               <div className="appointment-letter">
                 <div className="appointment-letter__head">
@@ -420,14 +450,15 @@ export default function Offers() {
                   </div>
                   <div>
                     <p>To,</p>
-                    <p><strong>{name}</strong></p>
+                    <p><strong>{[hon, name].filter(Boolean).join(" ")}</strong></p>
                     {addressLines.map((line, index) => <p key={index}>{line}</p>)}
                   </div>
                 </div>
 
                 <h3 className="appointment-letter__title">Appointment Letter</h3>
                 <div className="appointment-letter__body">
-                  <p className="appointment-letter__salutation">Dear {salutationName(name)},</p>
+                  <p className="appointment-letter__salutation">Dear {[hon, name].filter(Boolean).join(" ")},</p>
+                  <p>Candidate ID: {candidate?.candidateCode} &nbsp;|&nbsp; Application ID: {letterPreview?.application?.applicationCode}</p>
                   <p>This has reference to your application and subsequent discussions; we have pleasure in offering you employment in our Organization as:</p>
                   <div className="appointment-letter__details">
                     <strong>Designation:</strong><span>{letterPreview?.designation || "_____"}</span>
@@ -446,6 +477,11 @@ export default function Offers() {
                 <div className="appointment-letter__signature">
                   <div className="appointment-letter__signature-company">Faithfully yours,</div>
                   <div className="appointment-letter__signature-company">For EcoMetrix Consultants Private Limited</div>
+                  <div className="appointment-letter__signature-stamp" aria-label="Digitally signed by EMC Authorised">
+                    <span className="appointment-letter__signature-stamp-eyebrow">Digitally signed</span>
+                    <span className="appointment-letter__signature-stamp-script">EMC Authorised</span>
+                    <span className="appointment-letter__signature-stamp-date">Date: {ordinalDate(issueDate)}</span>
+                  </div>
                   <div className="appointment-letter__signature-space" />
                   <div className="appointment-letter__signature-label">Authorized Signatory</div>
                   <div className="appointment-letter__signature-label">Authorized Signatory Name</div>

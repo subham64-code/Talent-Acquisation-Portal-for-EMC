@@ -21,7 +21,8 @@
     "db:dev": "npm --workspace backend run db:dev"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "wrangler": "^4.166.0"
   },
   "overrides": {
     "wasm-feature-detect": "1.10.1"

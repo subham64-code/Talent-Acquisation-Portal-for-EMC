@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 import { hrApi } from "../lib/api";
 
@@ -9,17 +10,19 @@ import { hrApi } from "../lib/api";
  */
 export function useApiQuery<T>(
   key: readonly unknown[],
-  fetcher: () => Promise<any>,
+  fetcher: (signal?: AbortSignal) => Promise<any>,
   options?: Partial<UseQueryOptions<T>>,
 ) {
   return useQuery<T>({
     queryKey: key,
-    queryFn: async () => {
-      const res = await fetcher();
+    queryFn: async ({ signal }) => {
+      const res = await fetcher(signal);
       return (res?.data ?? res) as T;
     },
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
+    staleTime: 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
     placeholderData: (prev) => prev as any,
     ...options,
   });
@@ -43,11 +46,11 @@ export const queryKeys = {
 /** Invalidates the given query key prefixes after a mutation. */
 export function useInvalidate() {
   const qc = useQueryClient();
-  return (prefixes: string[]) => {
+  return useCallback((prefixes: string[]) => {
     for (const prefix of prefixes) {
       qc.invalidateQueries({ queryKey: [prefix] });
     }
-  };
+  }, [qc]);
 }
 
 export { hrApi };

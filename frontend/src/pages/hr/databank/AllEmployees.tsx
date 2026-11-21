@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, UsersRound } from "lucide-react";
 import Badge from "../../../components/ref/Badge";
@@ -10,6 +10,7 @@ import EmployeeCard from "./EmployeeCard";
 import { EmptyStateBlock, formatDate, initials } from "./shared";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery } from "../../../hooks/useApiQuery";
+import { useDebounced } from "../../../hooks/useDebounced";
 
 export default function AllEmployeesView({ departments }: { departments: any[] }) {
   const navigate = useNavigate();
@@ -17,30 +18,34 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
   const [recordType, setRecordType] = useState("");
   const [department, setDepartment] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const debouncedSearch = useDebounced(search);
 
-  const { data: rows = [], isLoading } = useApiQuery<any[]>(
-    ["employees", "all"],
-    () => hrApi.employees({ page: 1, pageSize: 100 }).then((r: any) => r?.data?.items ?? []),
+  // Search, record type, department and paging are all applied by the server.
+  const params = useMemo(() => ({
+    page,
+    pageSize: 20,
+    search: debouncedSearch || undefined,
+    status: recordType === "former" ? "FORMER" : recordType === "current" ? "EXISTING" : undefined,
+    departmentId: department || undefined,
+  }), [page, debouncedSearch, recordType, department]);
+
+  const { data, isLoading } = useApiQuery<any>(
+    ["employees", "all", params],
+    () => hrApi.employees(params).then((r: any) => r?.data ?? {}),
   );
+  const rows: any[] = Array.isArray(data) ? data : data?.items ?? [];
+  useEffect(() => {
+    setPagination({ total: Number(data?.total ?? 0), totalPages: Number(data?.totalPages ?? 1) });
+  }, [data?.total, data?.totalPages]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, recordType, department]);
 
   const withRecord = useMemo(
     () => rows.map((employee) => ({ ...employee, recordType: employee.status === "FORMER" ? "former" : "current" })),
     [rows],
   );
-
-  const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return withRecord.filter((row) => {
-      const matchesTerm =
-        !term ||
-        [row.fullName, row.officialEmail, row.employeeCode, row.designation?.name, row.department?.name]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term));
-      const matchesType = !recordType || row.recordType === recordType;
-      const matchesDepartment = !department || row.departmentId === department;
-      return matchesTerm && matchesType && matchesDepartment;
-    });
-  }, [withRecord, search, recordType, department]);
+  const filtered = withRecord;
 
   const clear = () => {
     setSearch("");
@@ -105,7 +110,7 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
         ]}
         onClear={clear}
       >
-        <span className="filters-summary">{isLoading ? "Loading records…" : `${filtered.length} of ${rows.length} employees shown`}</span>
+        <span className="filters-summary">{isLoading ? "Loading records…" : `${pagination.total} employees found`}</span>
         <ViewToggle value={viewMode} onChange={setViewMode} label="Switch employee view" />
       </DatabankToolbar>
 
@@ -116,7 +121,7 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
           rowKey={(row) => row.id}
           loading={isLoading}
           empty={<EmptyStateBlock icon={UsersRound} title="No employees match this view" description="Adjust your search or filters to see current and former employee records." action={<button className="btn btn--outline btn--sm" onClick={clear}>Clear filters</button>} />}
-          footer={<><span>Showing <strong>{filtered.length}</strong> of {rows.length} employee records</span><span className="cell-muted">Current + former employees</span></>}
+          footer={<><span>Page <strong>{page}</strong> of {pagination.totalPages} · {pagination.total} records</span><span className="databank-pager"><button type="button" className="btn btn--outline btn--sm" disabled={page <= 1 || isLoading} onClick={() => setPage(page - 1)}>Previous</button><button type="button" className="btn btn--outline btn--sm" disabled={page >= pagination.totalPages || isLoading} onClick={() => setPage(page + 1)}>Next</button></span></>}
         />
       ) : (
         <div className="employee-card-grid">

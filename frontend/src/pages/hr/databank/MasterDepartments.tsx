@@ -38,7 +38,7 @@ export default function MasterDepartments() {
   const [error, setError] = useState("");
   const [isWorking, setIsWorking] = useState(false);
 
-  const refresh = () => invalidate(["employees", "departments", "dashboard", "databank", "master-departments"]);
+  const refresh = () => invalidate(["employees", "departments", "dashboard", "master-departments"]);
 
   const { data: departmentsResponse, isLoading: departmentsLoading } = useApiQuery<any>(
     ["master-departments", "all"],

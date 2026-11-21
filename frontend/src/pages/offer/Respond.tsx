@@ -1,6 +1,7 @@
 import { useState, useEffect, type FormEvent } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { hrApi } from "../../lib/api";
+import { careerSiteUrl } from "../../lib/appLinks";
 import Logo from "../../components/Logo";
 
 export default function OfferRespond() {
@@ -53,7 +54,7 @@ export default function OfferRespond() {
       <nav className="corporate-header">
         <div className="corporate-header__inner">
           <div className="corporate-logo"><Logo size={46} /></div>
-          <div className="corporate-tools"><Link to="/careers/jobs" className="corporate-tool">Open roles</Link></div>
+          <div className="corporate-tools"><a href={careerSiteUrl} className="corporate-tool">Open roles</a></div>
         </div>
       </nav>
       <main className="max-w-xl mx-auto px-4 py-10">

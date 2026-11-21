@@ -1,0 +1,41 @@
+// Keep in sync with backend/src/config/constants.ts APPLICATION_TRANSITIONS.
+export const APPLICATION_TRANSITIONS: Record<string, string[]> = {
+  APPLIED: ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  UNDER_REVIEW: ["AI_RECOMMENDED", "SHORTLISTED", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  AI_RECOMMENDED: ["UNDER_REVIEW", "SHORTLISTED", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  SHORTLISTED: ["INTERVIEW_SCHEDULED", "SELECTED", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  INTERVIEW_SCHEDULED: ["INTERVIEW_COMPLETED", "SHORTLISTED", "SELECTED", "UNDER_REVIEW", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  INTERVIEW_COMPLETED: ["SELECTED", "REJECTED", "ON_HOLD", "INTERVIEW_SCHEDULED"],
+  SELECTED: ["OFFER_SENT", "REJECTED", "ON_HOLD", "WITHDRAWN"],
+  ON_HOLD: ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "SELECTED", "REJECTED", "WITHDRAWN"],
+  OFFER_SENT: ["OFFER_ACCEPTED", "REJECTED", "WITHDRAWN"],
+  OFFER_ACCEPTED: ["DOCUMENTS_PENDING", "DOCUMENTS_UNDER_REVIEW", "HIRED", "WITHDRAWN"],
+  DOCUMENTS_PENDING: ["DOCUMENTS_UNDER_REVIEW", "HIRED", "WITHDRAWN"],
+  DOCUMENTS_UNDER_REVIEW: ["DOCUMENTS_PENDING", "HIRED", "WITHDRAWN"],
+  REJECTED: ["UNDER_REVIEW"],
+  HIRED: [],
+  WITHDRAWN: [],
+};
+
+export const APPLICATION_STATUS_LABELS: Record<string, string> = {
+  APPLIED: "Applied",
+  UNDER_REVIEW: "Move to Screening",
+  AI_RECOMMENDED: "AI Recommended",
+  SHORTLISTED: "Shortlist",
+  INTERVIEW_SCHEDULED: "Schedule Interview",
+  INTERVIEW_COMPLETED: "Interview Completed",
+  SELECTED: "Select Candidate",
+  ON_HOLD: "Put on Hold",
+  OFFER_SENT: "Send Offer",
+  OFFER_ACCEPTED: "Offer Accepted",
+  DOCUMENTS_PENDING: "Documents Pending",
+  DOCUMENTS_UNDER_REVIEW: "Documents Under Review",
+  HIRED: "Mark as Hired",
+  REJECTED: "Reject Application",
+  WITHDRAWN: "Withdraw Application",
+};
+
+export function canTransition(from: string | undefined, to: string): boolean {
+  if (!from) return false;
+  return APPLICATION_TRANSITIONS[from]?.includes(to) ?? false;
+}

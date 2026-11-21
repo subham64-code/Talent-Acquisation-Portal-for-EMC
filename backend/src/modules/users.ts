@@ -5,7 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { ApiError } from "../utils/ApiError";
 import { ok, created, paginated } from "../utils/http";
 import { getPagination } from "../utils/pagination";
-import { authenticate, requireAuth, requireHr, requirePermission } from "../middleware/auth";
+import { authenticate, requirePermission } from "../middleware/auth";
 import { hashPassword, passwordStrengthError } from "../utils/crypto";
 import { storageBucketSummary } from "../storage/index";
 import { clearAuthCache } from "../lib/authCache";
@@ -14,6 +14,7 @@ import { notifyUser } from "../services/notification.service";
 import { sendTemplateEmail } from "../integrations/email/email.service";
 import { env } from "../config/env";
 import { PERMISSION_META } from "../config/constants";
+import { issueTotpEnrollment, safeEnrollmentOrigin } from "./auth";
 
 const router = express.Router();
 
@@ -23,13 +24,17 @@ const roleSchema = z.string().min(1);
 // candidate routes. Every route below applies its own permission check instead.
 // Scope the blanket auth check to this router's namespaces so requests for
 // other modules (e.g. /files/*) are not intercepted here.
-router.use(["/users", "/permissions", "/roles", "/audit-logs", "/active-sessions", "/storage"], authenticate);
+router.use(["/users", "/permissions", "/roles", "/audit-logs", "/active-sessions", "/storage", "/admin"], authenticate);
 
 const publicUserSelect = {
   id: true,
   name: true,
   email: true,
   isActive: true,
+  lastLoginAt: true,
+  totpEnabled: true,
+  totpEnrollmentPending: true,
+  totpEnabledAt: true,
   createdAt: true,
   updatedAt: true,
   roles: { select: { role: { select: { id: true, key: true, name: true } } } },
@@ -68,6 +73,7 @@ const createUserSchema = z.object({
   email: z.string().email(),
   roleIds: z.array(roleSchema).min(1, "At least one role is required."),
   departmentIds: z.array(roleSchema).optional(),
+  baseUrl: z.string().optional(),
 });
 
 router.post(
@@ -76,7 +82,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
-    const { name, email, roleIds, departmentIds = [] } = parsed.data;
+    const { name, email, roleIds, departmentIds = [], baseUrl } = parsed.data;
 
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) throw ApiError.conflict("A user with this email already exists.");
@@ -116,7 +122,22 @@ router.post(
     await notifyUser(user.id, { type: "hr.invitation", title: "HR account invited", body: "You have been invited to the HR portal." });
     await logAudit(req, { action: "USER_CREATE", entityType: "User", entityId: user.id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { email } });
 
-    return created(res, { user });
+    // HR roles (not IT admins) need an administrator-authorized authenticator
+    // enrollment link before they can sign in.
+    let emailDelivered: boolean | undefined;
+    let enrollmentLink: string | undefined;
+    if (roles.some((r) => ["SUPER_ADMIN", "HR_ADMIN", "HR_RECRUITER"].includes(r.key))) {
+      const enrollment = await issueTotpEnrollment(
+        user.id,
+        req.auth!.subjectId,
+        { name, email },
+        safeEnrollmentOrigin(baseUrl) ?? safeEnrollmentOrigin(req.get("origin")),
+      );
+      emailDelivered = enrollment.delivered;
+      enrollmentLink = enrollment.link;
+    }
+
+    return created(res, { user, emailDelivered, enrollmentLink });
   }),
 );
 
@@ -168,7 +189,6 @@ router.patch(
   }),
 );
 
-let rolesById: Record<string, { key: string; name: string }> = {};
 router.get(
   "/users/:id",
   requirePermission("users.manage"),
@@ -251,7 +271,7 @@ router.get(
  * OTPs and deactivates the account so it can be re-invited cleanly.
  */
 router.post(
-  "/:id/reset",
+  "/users/:id/reset",
   requirePermission("users.reset"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
@@ -264,9 +284,18 @@ router.post(
     await prisma.authSession.updateMany({ where: { subjectType: "HR", subjectId: id }, data: { revokedAt: new Date() } });
     clearAuthCache();
     await prisma.otpVerification.updateMany({ where: { email: user.email, consumedAt: null }, data: { consumedAt: new Date() } });
-    if (body.data.deactivate) {
-      await prisma.user.update({ where: { id }, data: { isActive: false } });
-    }
+    await prisma.totpEnrollment.updateMany({ where: { userId: id, consumedAt: null }, data: { consumedAt: new Date() } });
+    const userUpdate: any = {
+      totpSecretEncrypted: null,
+      totpEnabled: false,
+      totpEnrollmentPending: false,
+      totpLastUsedStep: null,
+      totpEnabledAt: null,
+      failedTotpAttempts: 0,
+      lockedUntil: null,
+    };
+    if (body.data.deactivate) userUpdate.isActive = false;
+    await prisma.user.update({ where: { id }, data: userUpdate });
 
     await logAudit(req, {
       action: "USER_RESET",
@@ -283,13 +312,13 @@ router.post(
         ? `Your access was reset by the administrator. Reason: ${body.data.reason}`
         : "Your access was reset by the administrator. Please contact HR to be re-invited.",
     });
-    return ok(res, { message: "User reset. All sessions and pending OTPs were revoked." });
+    return ok(res, { message: "User reset. All sessions, pending OTPs and TOTP enrollment were revoked." });
   }),
 );
 
 /** Restores a previously reset/deactivated user. */
 router.post(
-  "/:id/restore",
+  "/users/:id/restore",
   requirePermission("users.reset"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
@@ -301,9 +330,88 @@ router.post(
   }),
 );
 
-/** Sets or clears a password so the IT administrator can use password sign-in. HR roles are OTP-only. */
+/**
+ * Administrator action: revoke every active session for an HR user.
+ * Deactivation and TOTP reset use the same revocation internally.
+ */
 router.post(
-  "/:id/password",
+  "/users/:id/sessions/revoke-all",
+  requirePermission("users.reset"),
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const user = await prisma.user.findUnique({ where: { id }, select: { email: true } });
+    if (!user) throw ApiError.notFound("User not found.");
+    await prisma.authSession.updateMany({ where: { subjectType: "HR", subjectId: id, revokedAt: null }, data: { revokedAt: new Date() } });
+    clearAuthCache();
+    await logAudit(req, { action: "SESSIONS_REVOKE_ALL", entityType: "User", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { targetEmail: user.email } });
+    return ok(res, { message: "All active sessions for this user have been revoked." });
+  }),
+);
+
+/**
+ * Administrator action: reset an HR user's TOTP enrollment and issue a fresh,
+ * short-lived, single-use setup link to their registered email address.
+ * Never returns the secret, QR URI or encryption key.
+ */
+async function resetTotpHandler(req: express.Request, res: express.Response) {
+  const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+  const body = z.object({ baseUrl: z.string().optional() }).safeParse(req.body ?? {});
+  const origin = safeEnrollmentOrigin(body.data?.baseUrl) ?? safeEnrollmentOrigin(req.get("origin"));
+  const user = await prisma.user.findUnique({ where: { id }, select: { email: true, name: true } });
+  if (!user) throw ApiError.notFound("User not found.");
+  if (id === req.auth!.subjectId) throw ApiError.badRequest("You cannot reset your own authenticator.");
+
+  // These writes are independent; run them together to keep the slow remote
+  // database from adding several sequential round trips to this endpoint.
+  await Promise.all([
+    prisma.authSession.updateMany({ where: { subjectType: "HR", subjectId: id, revokedAt: null }, data: { revokedAt: new Date() } }),
+    prisma.totpEnrollment.updateMany({ where: { userId: id, consumedAt: null }, data: { consumedAt: new Date() } }),
+    prisma.user.update({
+      where: { id },
+      data: {
+        totpSecretEncrypted: null,
+        totpEnabled: false,
+        totpEnrollmentPending: false,
+        totpLastUsedStep: null,
+        totpEnabledAt: null,
+        failedTotpAttempts: 0,
+        lockedUntil: null,
+      },
+    }),
+  ]);
+  clearAuthCache();
+  const { delivered, link } = await issueTotpEnrollment(id, req.auth!.subjectId, user, origin);
+  await Promise.allSettled([
+    logAudit(req, {
+      action: "TOTP_RESET",
+      entityType: "User",
+      entityId: id,
+      actorId: req.auth!.subjectId,
+      actorEmail: req.auth!.email,
+      metadata: { targetEmail: user.email },
+    }),
+    notifyUser(id, {
+      type: "auth.totp_reset",
+      title: "Authenticator reset",
+      body: "Your HR authenticator enrollment was reset. A new setup link has been emailed to you.",
+    }),
+  ]);
+  return ok(res, {
+    message: delivered
+      ? "TOTP reset. A new setup link was emailed to the user and all sessions were revoked."
+      : "TOTP reset and sessions revoked. The email could not be delivered — copy the setup link below and send it to the user yourself.",
+    emailDelivered: delivered,
+    enrollmentLink: link,
+  });
+}
+
+router.post("/users/:id/reset-totp", requirePermission("users.reset"), asyncHandler(resetTotpHandler));
+router.post("/users/:id/totp/enrollment", requirePermission("users.reset"), asyncHandler(resetTotpHandler));
+router.post("/admin/hr/:id/reset-totp", requirePermission("users.reset"), asyncHandler(resetTotpHandler));
+
+/** Sets or clears a password so the IT administrator can use password sign-in. HR roles use TOTP. */
+router.post(
+  "/users/:id/password",
   requirePermission("users.reset"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
@@ -316,7 +424,7 @@ router.post(
     if (!user) throw ApiError.notFound("User not found.");
     // HR roles always sign in with an email OTP. Password sign-in is reserved for IT_ADMIN.
     const isItAdmin = user.roles.some((r) => r.role.key === "IT_ADMIN");
-    if (!isItAdmin) throw ApiError.badRequest("Password sign-in is not allowed for HR roles. HR accounts always use an emailed code.");
+    if (!isItAdmin) throw ApiError.badRequest("Password sign-in is not allowed for HR roles. HR accounts use an authenticator app.");
 
     const password = parsed.data.password;
     if (password) {
@@ -483,12 +591,12 @@ router.put(
       if (found.length !== ids.length) throw ApiError.badRequest("One or more permissions are invalid.");
     }
 
-    await prisma.$transaction([
-      prisma.userPermissionOverride.deleteMany({ where: { userId: id } }),
-      ...(ids.length
-        ? [prisma.userPermissionOverride.createMany({ data: body.data.overrides.map((o) => ({ userId: id, permissionId: o.permissionId, effect: o.effect })) })]
-        : []),
-    ]);
+    // Sequential writes (not $transaction) so the Neon HTTP fallback transport,
+    // which does not support transactions, can still serve this endpoint.
+    await prisma.userPermissionOverride.deleteMany({ where: { userId: id } });
+    if (ids.length) {
+      await prisma.userPermissionOverride.createMany({ data: body.data.overrides.map((o) => ({ userId: id, permissionId: o.permissionId, effect: o.effect })) });
+    }
     clearAuthCache();
 
     const grants = body.data.overrides.filter((o) => o.effect === "GRANT").length;

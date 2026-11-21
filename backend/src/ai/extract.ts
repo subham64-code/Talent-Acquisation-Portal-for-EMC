@@ -3,6 +3,7 @@ import mammoth from "mammoth";
 import Tesseract from "tesseract.js";
 import { env } from "../config/env";
 import { ocrPdfBuffer } from "./pdfOcr";
+import { SKILL_VOCABULARY } from "./skillVocabulary";
 
 export interface ParsedCV {
   skills: string[];
@@ -15,6 +16,7 @@ export interface ParsedCV {
   certifications: string[];
   organizations: string[];
   titles: string[];
+  projects?: Array<{ name?: string; description?: string; technologies?: string[] }>;
   languages: string[];
   confidence: number;
 }
@@ -74,6 +76,36 @@ const QUAL_TIERS: Array<{ re: RegExp; rank: number; label: string }> = [
   { re: /10th|matric|ssc/i, rank: 1, label: "Class 10" },
 ];
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function detectSkills(text: string): string[] {
+  const found = new Set<string>();
+  for (const skill of SKILL_VOCABULARY) {
+    if (skill.length < 3) continue;
+    const pattern = new RegExp(`(?:^|[^a-z0-9])${escapeRegExp(skill)}(?:$|[^a-z0-9])`, "i");
+    if (pattern.test(text)) found.add(skill);
+  }
+  return [...found].slice(0, 60);
+}
+
+function detectProjects(text: string): Array<{ name?: string; description?: string; technologies?: string[] }> {
+  const heading = /(?:^|\n)\s*(?:PROJECTS?|PROJECT EXPERIENCE|KEY PROJECTS)\s*[:\-\n]/i.exec(text);
+  if (!heading) return [];
+  const rest = text.slice(heading.index + heading[0].length);
+  const nextHeading = rest.search(/\n\s*(?:EDUCATION|EXPERIENCE|EMPLOYMENT|CERTIFICATION|SKILLS|PERSONAL|ACHIEVEMENTS|ADDITIONAL|REFERENCES)\b/i);
+  const section = (nextHeading > 0 ? rest.slice(0, nextHeading) : rest).slice(0, 6000);
+  const blocks = section.split(/\n\s*(?:\d+[.)]|•|-)\s*/).map((block) => block.trim()).filter((block) => block.length >= 25);
+  const projects: Array<{ name?: string; description?: string; technologies?: string[] }> = [];
+  for (const block of blocks.slice(0, 8)) {
+    const technologies = detectSkills(block);
+    projects.push({ name: block.split("\n")[0].slice(0, 140), description: block.slice(0, 900), technologies });
+    if (projects.length >= 5) break;
+  }
+  return projects;
+}
+
 export function parseStructured(text: string, existingName?: string): ParsedCV {
   const clean = text.replace(/\s+/g, " ").trim();
   const emails = [...clean.matchAll(EMAIL_RE)].map((m) => m[0]);
@@ -85,9 +117,8 @@ export function parseStructured(text: string, existingName?: string): ParsedCV {
   const graduationYear = years.length ? years[years.length - 1] : undefined;
 
   let qualification: string | undefined;
-  let rank = 0;
   for (const tier of QUAL_TIERS) {
-    if (tier.re.test(clean)) { qualification = tier.label; rank = tier.rank; break; }
+    if (tier.re.test(clean)) { qualification = tier.label; break; }
   }
 
   const certificationRe = /(?:certified|certification|certificate)\s+(?:in|of)?\s*([A-Za-z0-9 .\-]+)/gi;
@@ -97,13 +128,20 @@ export function parseStructured(text: string, existingName?: string): ParsedCV {
     if (c && !certifications.includes(c)) certifications.push(c);
   }
 
-  // Organizations / titles are very heuristic: look for common headings context.
+  // Organizations / titles are heuristic and only recorded when the line itself
+  // contains a clear role or employer marker. Missing values stay unknown.
   const organizations: string[] = [];
   const titles: string[] = [];
-  const lines = clean.split(/\n|•|-/).map((l) => l.trim()).filter((l) => l.length > 2 && l.length < 100);
+  const lines = text.split(/\n|•|-/).map((l) => l.trim()).filter((l) => l.length > 2 && l.length < 100);
+  const titlePattern = /\b(engineer|manager|developer|analyst|consultant|executive|intern|technician|officer|assistant|supervisor|designer|accountant|surveyor)\b/i;
+  const organizationPattern = /\b(ltd|limited|pvt|private|technologies|solutions|llc|corp|corporation|company|consultants|infotech|systems)\b/i;
   for (const line of lines) {
     if (/experience|employment|work history|professional experience/i.test(line)) continue;
+    if (titlePattern.test(line) && !titles.includes(line)) titles.push(line);
+    if (organizationPattern.test(line) && !organizations.includes(line)) organizations.push(line);
   }
+  const skills = detectSkills(text);
+  const projects = detectProjects(text);
 
   const languages: string[] = [];
   for (const lang of ["English","Hindi","French","German","Spanish","Telugu","Tamil","Kannada","Malayalam","Marathi","Bengali","Odia","Punjabi","Gujarati","Urdu","Arabic","Chinese","Japanese"]) {
@@ -119,7 +157,15 @@ export function parseStructured(text: string, existingName?: string): ParsedCV {
   if (graduationYear) confidence += 15;
   if (qualification) confidence += 15;
   if (clean.length > 500) confidence += 10;
+  if (skills.length) confidence += 10;
+  if (projects.length) confidence += 5;
+  if (titles.length) confidence += 5;
   if (confidence > 100) confidence = 100;
 
-  return { skills: [], emails, phones, name, experienceYears, graduationYear, qualification, certifications, organizations, titles, languages, confidence };
+  // Confidence is exposed as a 0-1 ratio. Scoring thresholds (`< 0.3` means low
+  // confidence), tests and the UI all consume this scale; returning 0-100 here
+  // made low-quality extractions pass the guard and display as e.g. "2000%".
+  const normalizedConfidence = confidence / 100;
+
+  return { skills, emails, phones, name, experienceYears, graduationYear, qualification, certifications, organizations, titles, projects, languages, confidence: normalizedConfidence };
 }

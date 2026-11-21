@@ -223,7 +223,7 @@
 }
 
 .candidate-applications-table-wrap .data-table {
-  min-width: 1500px;
+  min-width: 960px;
   table-layout: auto;
 }
 
@@ -248,13 +248,8 @@
   min-width: 120px;
 }
 
-.candidate-applications-table-wrap .col-location,
-.candidate-applications-table-wrap .col-qualification {
-  min-width: 150px;
-}
-
 .candidate-applications-table-wrap .col-actions {
-  min-width: 156px;
+  min-width: 88px;
 }
 
 .candidate-additional-card {
@@ -263,6 +258,18 @@
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
+}
+
+.candidate-additional-card--compact {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.candidate-additional-card--compact .candidate-additional-card__body {
+  padding: 0;
+  gap: 0.6rem;
 }
 
 .candidate-additional-card__header {

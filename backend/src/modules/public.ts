@@ -13,9 +13,17 @@ import { sendTemplateEmail } from "../integrations/email/email.service";
 import { cvUpload } from "../middleware/upload";
 import { storeFile, STORAGE_BUCKETS } from "../storage/index";
 import { env } from "../config/env";
-import { APPLICATION_STATUS } from "../config/constants";
+import { APPLICATION_STATUS, APPLICATION_STATUS_LABELS } from "../config/constants";
+import { publicRateLimiter, applicationRateLimiter } from "../middleware/rateLimit";
 
 const router = express.Router();
+router.use(publicRateLimiter);
+
+function isOpenForApplications(opening: { status: string; deadline: Date | null; positions: number }): boolean {
+  return opening.status === "PUBLISHED"
+    && (!opening.deadline || opening.deadline.getTime() >= Date.now())
+    && opening.positions > 0;
+}
 
 router.get(
   "/career/departments",
@@ -43,14 +51,20 @@ router.get(
   "/career/openings",
   asyncHandler(async (req, res) => {
     const { page, pageSize, skip, take, search } = getPagination(req);
-    const where: any = {
-      status: "PUBLISHED",
-      OR: [{ deadline: null }, { deadline: { gte: new Date() } }],
-    };
-    if (search) where.OR = [{ title: { contains: search, mode: "insensitive" } }, { jobCode: { contains: search, mode: "insensitive" } }];
+    const departmentId = typeof req.query.departmentId === "string" && req.query.departmentId ? req.query.departmentId : "";
+    // Every condition is combined with AND so search/department filters can never
+    // overwrite the "published and not expired" constraint. Previously assigning
+    // `where.OR` for search replaced the deadline guard and leaked closed openings.
+    const and: any[] = [{ OR: [{ deadline: null }, { deadline: { gte: new Date() } }] }];
+    if (search) {
+      and.push({ OR: [{ title: { contains: search, mode: "insensitive" } }, { jobCode: { contains: search, mode: "insensitive" } }] });
+    }
+    if (departmentId) and.push({ departmentId });
+    and.push({ positions: { gt: 0 } });
+    const where: any = { status: "PUBLISHED", AND: and };
     const [items, total] = await Promise.all([
       cached(
-        CACHE_KEYS.publicOpenings(page, pageSize, search ?? "", (req.query.departmentId as string) ?? ""),
+        CACHE_KEYS.publicOpenings(page, pageSize, search ?? "", departmentId),
         env.cacheTtlSeconds,
         async () =>
           prisma.jobOpening.findMany({
@@ -65,6 +79,27 @@ router.get(
 );
 
 router.get(
+  "/career/openings/:id/availability",
+  asyncHandler(async (req, res) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const item = await prisma.jobOpening.findUnique({
+      where: { id },
+      select: { status: true, deadline: true, positions: true, publishedAt: true },
+    });
+    if (!item || item.status !== "PUBLISHED") {
+      throw ApiError.notFound("Opening not found or not open for applications.");
+    }
+    const accepting = isOpenForApplications(item);
+    return ok(res, {
+      accepting,
+      reason: accepting ? null : item.deadline && item.deadline.getTime() < Date.now() ? "APPLICATION_DEADLINE_PASSED" : "NO_VACANCIES",
+      deadline: item.deadline,
+      positions: item.positions,
+    });
+  }),
+);
+
+router.get(
   "/career/openings/:id",
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
@@ -73,61 +108,141 @@ router.get(
       include: { department: true, program: true, employmentType: true },
     });
     if (!item) throw ApiError.notFound("Opening not found or not open for applications.");
-    return ok(res, { item });
+    return ok(res, {
+      item,
+      accepting: isOpenForApplications(item),
+      deadline: item.deadline,
+      positions: item.positions,
+    });
+  }),
+);
+
+router.get(
+  "/career/applications/status",
+  asyncHandler(async (req, res) => {
+    const parsed = z
+      .object({ reference: z.string().min(1), email: z.string().email() })
+      .safeParse(req.query);
+    if (!parsed.success) throw ApiError.badRequest("Enter your application reference and a valid email address.");
+    const reference = parsed.data.reference.trim();
+    const email = parsed.data.email.trim().toLowerCase();
+    const application = await prisma.application.findFirst({
+      where: {
+        applicationCode: { equals: reference, mode: "insensitive" },
+        candidate: { email: { equals: email, mode: "insensitive" } },
+      },
+      select: {
+        id: true,
+        applicationCode: true,
+        status: true,
+        appliedAt: true,
+        updatedAt: true,
+        candidate: { select: { fullName: true } },
+        jobOpening: {
+          select: {
+            title: true,
+            jobCode: true,
+            location: true,
+            department: { select: { name: true } },
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, fromStatus: true, toStatus: true, createdAt: true },
+        },
+      },
+    });
+    if (!application) throw ApiError.notFound("No application found for that reference and email address.");
+    return ok(res, {
+      application: {
+        reference: application.applicationCode,
+        status: application.status,
+        statusLabel: APPLICATION_STATUS_LABELS[application.status] ?? application.status,
+        appliedAt: application.appliedAt,
+        updatedAt: application.updatedAt,
+        candidateName: application.candidate.fullName,
+        jobTitle: application.jobOpening.title,
+        jobCode: application.jobOpening.jobCode,
+        location: application.jobOpening.location,
+        department: application.jobOpening.department?.name ?? null,
+      },
+      history: application.statusHistory.map((entry) => ({
+        from: entry.fromStatus,
+        to: entry.toStatus,
+        label: APPLICATION_STATUS_LABELS[entry.toStatus] ?? entry.toStatus,
+        at: entry.createdAt,
+      })),
+    });
   }),
 );
 
 const MOBILE_REGEX = /^[6-9]\d{9}$/;
-const listField = (v: unknown): string[] =>
-  Array.isArray(v)
-    ? v.map(String).map((s) => s.trim()).filter(Boolean)
-    : String(v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
+// Exactly the inputs of the original EMC careers apply form, plus one CV file.
+// No extra candidate fields are added or renamed anywhere in the pipeline.
 const applySchema = z.object({
-  jobOpeningId: z.string().min(1),
-  coverLetter: z.string().optional().nullable(),
-  fullName: z.string().min(2).max(120),
+  job_id: z.string().min(1),
+  job_title: z.string().optional().nullable(),
+  full_name: z.string().min(2).max(120),
   email: z.string().email().transform((v) => v.trim().toLowerCase()),
-  mobile: z
+  phone: z
     .string()
-    .min(1, "Mobile number is required.")
+    .min(1, "Phone number is required.")
     .transform((v) => v.replace(/[\s()-]/g, ""))
-    .refine((v) => MOBILE_REGEX.test(v), "Mobile number must be exactly 10 digits and start with 6-9."),
-  dateOfBirth: z.string().optional().nullable(),
-  gender: z.string().optional().nullable(),
-  currentAddress: z.string().optional().nullable(),
-  country: z.string().optional().nullable(),
-  state: z.string().optional().nullable(),
-  city: z.string().optional().nullable(),
-  currentLocation: z.string().optional().nullable(),
-  qualifications: z.string().optional().nullable(),
-  highestQualification: z.string().optional().nullable(),
-  course: z.string().optional().nullable(),
-  specializationStream: z.string().optional().nullable(),
-  college: z.string().optional().nullable(),
-  passingYear: z.coerce.number().int().min(1950).max(2100).optional().nullable(),
-  percentage: z.string().optional().nullable(),
-  totalExperience: z.coerce.number().nonnegative().optional().nullable(),
-  relevantExperience: z.coerce.number().nonnegative().optional().nullable(),
-  currentCompany: z.string().optional().nullable(),
-  currentDesignation: z.string().optional().nullable(),
-  department: z.string().optional().nullable(),
-  workSpecialization: z.string().optional().nullable(),
-  technicalSkills: z.string().optional().nullable(),
-  professionalSkills: z.string().optional().nullable(),
-  employmentStatus: z.string().optional().nullable(),
-  expectedSalary: z.string().optional().nullable(),
-  noticePeriod: z.string().optional().nullable(),
-  qualification: z.string().optional().nullable(),
-  graduationYear: z.coerce.number().int().min(1900).max(2100).optional().nullable(),
-  currentOrganization: z.string().optional().nullable(),
-  specialization: z.string().optional().nullable(),
-  linkedin: z.string().url().optional().nullable().or(z.literal("")),
-  additionalInfo: z.string().optional().nullable(),
+    .refine((v) => MOBILE_REGEX.test(v), "Phone number must be exactly 10 digits and start with 6-9."),
+  experience: z.string().min(1, "Experience is required.").max(120),
+  cover_letter: z.string().optional().nullable(),
 });
+
+const EMC_FORM_FIELDS = ["job_id", "job_title", "full_name", "email", "phone", "experience", "cover_letter"] as const;
+
+function emcFormData(req: express.Request): Record<string, string> {
+  const raw: Record<string, string> = {};
+  for (const field of EMC_FORM_FIELDS) {
+    const value = req.body?.[field];
+    if (typeof value === "string") raw[field] = value;
+  }
+  return raw;
+}
+
+function asNumber(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Candidate codes follow EMC<YYYY><MM>C<n>, e.g. EMC202611C1 for the first
+ * candidate registered in November 2026. The sequence resets per month.
+ */
+async function nextCandidateCode(): Promise<string> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `EMC${year}${month}C`;
+  const existing = await prisma.candidate.findMany({ where: { candidateCode: { startsWith: prefix } }, select: { candidateCode: true } });
+  const maxSeq = existing.reduce((max, row) => {
+    const seq = Number.parseInt(row.candidateCode.slice(prefix.length), 10);
+    return Number.isFinite(seq) && seq > max ? seq : max;
+  }, 0);
+  return `${prefix}${maxSeq + 1}`;
+}
+
+/** Application codes follow <jobCode>/A<n>, e.g. EMC202611J1/A1, sequenced per job. */
+async function nextApplicationCode(jobCode: string): Promise<string> {
+  const prefix = `${jobCode}/A`;
+  const existing = await prisma.application.findMany({ where: { applicationCode: { startsWith: prefix } }, select: { applicationCode: true } });
+  const maxSeq = existing.reduce((max, row) => {
+    const seq = Number.parseInt(row.applicationCode.slice(prefix.length), 10);
+    return Number.isFinite(seq) && seq > max ? seq : max;
+  }, 0);
+  return `${prefix}${maxSeq + 1}`;
+}
 
 router.post(
   "/career/applications",
+  applicationRateLimiter,
   cvUpload.single("cv"),
   asyncHandler(async (req, res) => {
     const parsed = applySchema.safeParse(req.body);
@@ -137,92 +252,36 @@ router.post(
       const firstMessage = firstField ? flat[firstField]?.[0] : undefined;
       throw ApiError.badRequest(firstMessage || "Please check the highlighted fields and try again.", parsed.error.flatten());
     }
-    const { jobOpeningId, coverLetter } = parsed.data;
+    const data = parsed.data;
+    const raw = emcFormData(req);
     if (!req.file) throw ApiError.badRequest("Please attach your CV (PDF, DOC or DOCX, maximum 10 MB).");
-    const job = await prisma.jobOpening.findUnique({ where: { id: jobOpeningId, status: "PUBLISHED" } });
+    const job = await prisma.jobOpening.findUnique({ where: { id: data.job_id, status: "PUBLISHED" } });
     if (!job) throw ApiError.notFound("Opening not found or not accepting applications.");
+    if (!isOpenForApplications(job)) {
+      throw ApiError.conflict("This opening is closed or its application deadline has passed.");
+    }
 
-    const email = parsed.data.email;
+    const email = data.email;
     let candidate = await prisma.candidate.findUnique({ where: { email } });
 
-    const completeLocation = parsed.data.currentLocation
-      || [parsed.data.city, parsed.data.state, parsed.data.country].filter(Boolean).join(", ")
-      || null;
-    const profileExtra = {
-      country: parsed.data.country, state: parsed.data.state, city: parsed.data.city,
-      address: parsed.data.currentAddress, dateOfBirth: parsed.data.dateOfBirth, gender: parsed.data.gender,
-      highestQualification: parsed.data.highestQualification, qualifications: listField(parsed.data.qualifications),
-      course: parsed.data.course, stream: parsed.data.specializationStream, college: parsed.data.college,
-      passingYear: parsed.data.passingYear, percentage: parsed.data.percentage,
-      employmentStatus: parsed.data.employmentStatus, expectedSalary: parsed.data.expectedSalary,
-      noticePeriod: parsed.data.noticePeriod, currentDepartment: parsed.data.department,
-      technicalSkills: listField(parsed.data.technicalSkills), professionalSkills: listField(parsed.data.professionalSkills),
+    const candidateProfile = {
+      fullName: data.full_name,
+      mobile: data.phone,
+      totalExperience: asNumber(data.experience),
+      additionalInfo: JSON.stringify(raw),
     };
-    const additionalInfo = JSON.stringify(profileExtra);
-    const qualificationSummary = parsed.data.highestQualification || parsed.data.qualification || null;
 
     if (candidate) {
-      candidate = await prisma.candidate.update({
-        where: { id: candidate.id },
-        data: {
-          fullName: parsed.data.fullName,
-          mobile: parsed.data.mobile,
-          currentLocation: completeLocation,
-          qualification: qualificationSummary,
-          graduationYear: parsed.data.graduationYear ?? parsed.data.passingYear ?? null,
-          totalExperience: parsed.data.totalExperience,
-          relevantExperience: parsed.data.relevantExperience,
-          currentOrganization: parsed.data.currentCompany ?? parsed.data.currentOrganization ?? null,
-          currentDesignation: parsed.data.currentDesignation,
-          specialization: parsed.data.workSpecialization ?? parsed.data.specialization ?? null,
-          linkedin: parsed.data.linkedin || null,
-          additionalInfo,
-        },
-      });
+      candidate = await prisma.candidate.update({ where: { id: candidate.id }, data: candidateProfile });
     } else {
       candidate = await prisma.candidate.create({
-        data: {
-          candidateCode: "CAN" + Date.now().toString(36).toUpperCase().slice(-6) + Math.random().toString(36).slice(2, 5).toUpperCase(),
-          fullName: parsed.data.fullName,
-          email,
-          mobile: parsed.data.mobile,
-          currentLocation: completeLocation,
-          qualification: qualificationSummary,
-          graduationYear: parsed.data.graduationYear ?? parsed.data.passingYear ?? null,
-          totalExperience: parsed.data.totalExperience,
-          relevantExperience: parsed.data.relevantExperience,
-          currentOrganization: parsed.data.currentCompany ?? parsed.data.currentOrganization ?? null,
-          currentDesignation: parsed.data.currentDesignation,
-          specialization: parsed.data.workSpecialization ?? parsed.data.specialization ?? null,
-          linkedin: parsed.data.linkedin || null,
-          additionalInfo,
-          status: "ACTIVE",
-        },
+        data: { candidateCode: await nextCandidateCode(), email, status: "ACTIVE", ...candidateProfile },
       });
     }
     const candidateId = candidate.id;
 
-    const existing = await prisma.application.findFirst({ where: { candidateId, jobOpeningId } });
+    const existing = await prisma.application.findFirst({ where: { candidateId, jobOpeningId: data.job_id } });
     if (existing) throw ApiError.conflict("You have already applied for this position with this email address.");
-
-    if (parsed.data.college || parsed.data.course || parsed.data.highestQualification) {
-      await prisma.educationRecord.create({
-        data: {
-          candidateId,
-          degree: parsed.data.course || parsed.data.highestQualification || "Education",
-          institution: parsed.data.college ?? null,
-          field: parsed.data.specializationStream ?? null,
-          endYear: parsed.data.passingYear ?? null,
-          grade: parsed.data.percentage ?? null,
-        },
-      }).catch(() => undefined);
-    }
-    for (const skillName of [...listField(parsed.data.technicalSkills), ...listField(parsed.data.professionalSkills)]) {
-      try {
-        const skill = await prisma.skill.upsert({ where: { name: skillName }, create: { name: skillName }, update: {} });
-        await prisma.candidateSkill.create({ data: { candidateId, skillId: skill.id } }).catch(() => undefined);
-      } catch { /* skill linking is best effort */ }
-    }
 
     const file = await storeFile({ buffer: req.file.buffer, originalName: req.file.originalname, mimeType: req.file.mimetype, ownerType: "CANDIDATE", ownerId: candidateId, bucket: STORAGE_BUCKETS.APPLICATIONS, visibility: "PRIVATE" });
     const resumeFileId = file.id;
@@ -231,8 +290,14 @@ router.post(
 
     const application = await prisma.application.create({
       data: {
-        applicationCode: "APP" + Date.now().toString(36).toUpperCase().slice(-6) + Math.random().toString(36).slice(2, 5).toUpperCase(),
-        candidateId, jobOpeningId, status: APPLICATION_STATUS.APPLIED, coverLetter, resumeFileId,
+        ...raw,
+        cv_file_name: req.file.originalname,
+        applicationCode: await nextApplicationCode(job.jobCode),
+        candidateId,
+        jobOpeningId: data.job_id,
+        status: APPLICATION_STATUS.APPLIED,
+        coverLetter: data.cover_letter || null,
+        resumeFileId,
       },
       include: { candidate: true, jobOpening: { include: { department: true } } },
     });
@@ -242,13 +307,14 @@ router.post(
       templateKey: "application_confirmation",
       data: {
         name: candidate.fullName, jobTitle: application.jobOpening.title, applicationCode: application.applicationCode,
-        department: application.jobOpening.department?.name, appliedAt: application.appliedAt.toISOString(), link: `${env.appUrl}/career`,
+        department: application.jobOpening.department?.name, appliedAt: application.appliedAt.toISOString(),
+        link: `${env.trackApplicationUrl}?ref=${encodeURIComponent(application.applicationCode)}&email=${encodeURIComponent(candidate.email)}`,
       },
       metadata: { applicationId: application.id },
     });
     await notifyHrTeam({ type: "application.new", title: "New application", body: `${candidate.fullName} applied for ${job.title}.`, entityType: "Application", entityId: application.id });
     await cache.applicationsChanged();
-    await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: null, actorEmail: candidate.email, metadata: { jobOpeningId, actorType: "CANDIDATE", candidateId } });
+    await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: null, actorEmail: candidate.email, metadata: { jobOpeningId: data.job_id, actorType: "CANDIDATE", candidateId } });
 
     return created(res, {
       application: {

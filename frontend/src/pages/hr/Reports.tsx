@@ -16,11 +16,9 @@ import {
   Laptop,
   BadgeCheck,
   ClipboardList,
-  ShieldCheck,
   Trash2,
   FileWarning,
   RefreshCw,
-  BarChart3,
 } from "lucide-react";
 import { hrApi, api } from "../../lib/api";
 import { useApiQuery, queryKeys } from "../../hooks/useApiQuery";
@@ -90,6 +88,8 @@ export default function Reports() {
   const [status, setStatus] = useState("");
   const [rows, setRows] = useState<any[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1, pageSize: 100 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [typesError, setTypesError] = useState("");
@@ -113,14 +113,19 @@ export default function Reports() {
   }, []);
 
   const filterParams = useMemo(() => ({
+    page,
+    pageSize: 100,
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
     ...(departmentId ? { departmentId } : {}),
     ...(jobOpeningId ? { jobOpeningId } : {}),
     ...(status ? { status } : {}),
-  }), [from, to, departmentId, jobOpeningId, status]);
+  }), [page, from, to, departmentId, jobOpeningId, status]);
 
-  const run = async (reportType = type, nextFormat: typeof format = format) => {
+  // A changed filter always starts again from the first page.
+  useEffect(() => { setPage(1); }, [from, to, departmentId, jobOpeningId, status, type]);
+
+  const run = async (reportType = type, nextFormat: typeof format = format, explicitPage?: number) => {
     if (!reportType) return;
     setLoading(true);
     setError("");
@@ -128,11 +133,16 @@ export default function Reports() {
     try {
       setType(reportType);
       if (nextFormat === "json") {
-        const response = await hrApi.report(reportType, filterParams);
+        const response = await hrApi.report(reportType, { ...filterParams, page: explicitPage ?? page });
         const payload = response?.data?.data ?? response?.data;
         const data = Array.isArray(payload?.rows) ? payload.rows : [];
         setRows(data);
         setHeaders(data.length ? Object.keys(data[0]) : []);
+        setPagination({
+          total: Number(payload?.count ?? data.length),
+          totalPages: Number(payload?.totalPages ?? 1),
+          pageSize: Number(payload?.pageSize ?? 100),
+        });
       } else {
         const response = await api.get(`/reports/${reportType}`, { params: { ...filterParams, format: nextFormat }, responseType: "blob" });
         const ct = String(response.headers["content-type"] ?? "application/octet-stream");
@@ -256,8 +266,8 @@ export default function Reports() {
       {(rows.length > 0 || headers.length > 0) && (
         <section className="card reports-result">
           <div className="card__header">
-            <div><div className="card__title">{REPORT_META[type]?.title ?? "Report"}</div><div className="card__subtitle">{rows.length} record{rows.length === 1 ? "" : "s"} · live from the database</div></div>
-            <div className="reports-result-actions"><Badge variant="blue">{rows.length} rows</Badge><button type="button" className="btn btn--ghost btn--sm" onClick={clearResult}><RefreshCw size={14} aria-hidden="true" /> Clear</button></div>
+            <div><div className="card__title">{REPORT_META[type]?.title ?? "Report"}</div><div className="card__subtitle">{pagination.total} record{pagination.total === 1 ? "" : "s"} · page {page} of {pagination.totalPages}</div></div>
+            <div className="reports-result-actions"><Badge variant="blue">Showing {rows.length} of {pagination.total}</Badge><button type="button" className="btn btn--ghost btn--sm" onClick={clearResult}><RefreshCw size={14} aria-hidden="true" /> Clear</button></div>
           </div>
           <div className="reports-result-wrap">
             <table className="data-table reports-table">
@@ -265,6 +275,11 @@ export default function Reports() {
               <tbody>{rows.map((row, index) => <tr key={index}>{headers.map((header) => <td key={header}>{formatValue(row[header])}</td>)}</tr>)}</tbody>
             </table>
             {rows.length === 0 && <div className="empty-state">No records match these filters.</div>}
+          </div>
+          <div className="reports-pagination">
+            <button type="button" className="btn btn--outline btn--sm" disabled={page <= 1 || loading} onClick={() => { setPage(page - 1); void run(type, "json", page - 1); }}>Previous</button>
+            <span>Page {page} of {pagination.totalPages}</span>
+            <button type="button" className="btn btn--outline btn--sm" disabled={page >= pagination.totalPages || loading} onClick={() => { setPage(page + 1); void run(type, "json", page + 1); }}>Next</button>
           </div>
         </section>
       )}

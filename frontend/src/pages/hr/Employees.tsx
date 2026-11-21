@@ -1,26 +1,31 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, Send, AlertCircle } from "lucide-react";
+import { Plus, Send } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import { useApiQuery, queryKeys, useInvalidate } from "../../hooks/useApiQuery";
 import PageHeader from "../../components/ref/PageHeader";
 import Button from "../../components/ref/Button";
 import EmployeeStats from "./databank/EmployeeStats";
-import AllEmployeesView from "./databank/AllEmployees";
-import CurrentEmployeesView from "./databank/CurrentEmployees";
-import FormerEmployeesView from "./databank/FormerEmployees";
-import InvitationsView from "./databank/InvitationsView";
-import SubmissionsView from "./databank/SubmissionsView";
-import HoldView from "./databank/HoldView";
-import MasterDepartments from "./databank/MasterDepartments";
 import EmployeeFormModal from "./databank/EmployeeFormModal";
 import InvitationFormModal from "./databank/InvitationFormModal";
+
+// Each databank tab is its own chunk so opening the page does not download all
+// eight views and their individual query/table dependencies up front.
+const AllEmployeesView = lazy(() => import("./databank/AllEmployees"));
+const CurrentEmployeesView = lazy(() => import("./databank/CurrentEmployees"));
+const PipelinedView = lazy(() => import("./databank/PipelinedView"));
+const FormerEmployeesView = lazy(() => import("./databank/FormerEmployees"));
+const InvitationsView = lazy(() => import("./databank/InvitationsView"));
+const SubmissionsView = lazy(() => import("./databank/SubmissionsView"));
+const HoldView = lazy(() => import("./databank/HoldView"));
+const MasterDepartments = lazy(() => import("./databank/MasterDepartments"));
 import RequirePermission from "../../components/RequirePermission";
 import { SECTION_PERMISSIONS } from "../../lib/sectionPermissions";
 
 const TAB_DEFS = [
   { key: "all", label: "All Employees" },
   { key: "current", label: "Current Employees" },
+  { key: "pipelined", label: "Pipelined Employees" },
   { key: "former", label: "Former Employees" },
   { key: "invitations", label: "Invitations" },
   { key: "submissions", label: "Submissions" },
@@ -35,6 +40,7 @@ const LEGACY_TAB: Record<string, TabKey> = {
   EXISTING: "current",
   FORMER: "former",
   PIPELINE: "submissions",
+  PIPELINED: "pipelined",
 };
 
 export default function Employees() {
@@ -74,6 +80,7 @@ export default function Employees() {
   const tabCounts: Record<TabKey, number> = {
     all: stats.totalEmployees,
     current: stats.existingEmployees,
+    pipelined: Number(overview?.pipelineCandidates ?? 0),
     former: stats.formerEmployees,
     invitations: stats.pendingInvitations,
     submissions: stats.pendingSubmissions,
@@ -92,7 +99,7 @@ export default function Employees() {
 
   const counts = { departments, designations, employmentTypes };
 
-  const refresh = () => invalidate(["employees", "employee", "employee-invitations", "employee-submissions", "dashboard", "databank"]);
+  const refresh = () => invalidate(["employees", "employee", "employee-invitations", "employee-submissions", "dashboard"]);
 
   const createEmployee = async (values: any, cv: File | null) => {
     setError("");
@@ -165,8 +172,10 @@ export default function Employees() {
           ))}
         </nav>
         <div className="databank-panel__body">
+          <Suspense fallback={<div className="loading-block" role="status"><div className="spinner" /> Loading section…</div>}>
           {tab === "all" && <AllEmployeesView departments={counts.departments} />}
           {tab === "current" && <CurrentEmployeesView departments={counts.departments} designations={counts.designations} employmentTypes={counts.employmentTypes} onInvite={() => setInviteOpen(true)} onInvalidate={refresh} />}
+          {tab === "pipelined" && <PipelinedView />}
           {tab === "former" && <FormerEmployeesView departments={counts.departments} designations={counts.designations} employmentTypes={counts.employmentTypes} onInvalidate={refresh} />}
           {tab === "invitations" && <InvitationsView />}
           {tab === "submissions" && <SubmissionsView departments={counts.departments} designations={counts.designations} employmentTypes={counts.employmentTypes} />}
@@ -176,6 +185,7 @@ export default function Employees() {
               <MasterDepartments />
             </RequirePermission>
           )}
+          </Suspense>
         </div>
       </div>
 
