@@ -181,9 +181,15 @@ router.post(
     const email = body.email.trim().toLowerCase();
     let employee = await prisma.employee.findUnique({ where: { officialEmail: email } });
     if (!employee) {
+      const now = new Date();
+      const prefix = `EMC${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}`;
+      const existingCodes = await prisma.employee.findMany({ where: { employeeCode: { startsWith: prefix } }, select: { employeeCode: true } });
+      const used = new Set<number>();
+      for (const row of existingCodes) { const m=/([AJ])(\d+)$/.exec(row.employeeCode.slice(prefix.length)); if (m) used.add(Number.parseInt(m[2],10)); }
+      let seq=1; while(used.has(seq)) seq+=1;
       employee = await prisma.employee.create({
         data: {
-          employeeCode: "EMP" + Date.now().toString(36).toUpperCase().slice(-6) + Math.random().toString(36).slice(2, 5).toUpperCase(),
+          employeeCode: `${prefix}J${seq}`,
           fullName: body.fullName?.trim() || email.split("@")[0],
           officialEmail: email,
           status: "EXISTING",

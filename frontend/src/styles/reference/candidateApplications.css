@@ -223,9 +223,32 @@
 }
 
 .candidate-applications-table-wrap .data-table {
-  min-width: 960px;
-  table-layout: auto;
+  min-width: 100%;
+  table-layout: fixed;
+  font-size: 0.78rem;
+  border-collapse: separate;
+  border-spacing: 0 6px;
 }
+.candidate-applications-table-wrap .data-table tbody tr td {
+  background: var(--color-surface, #fff);
+}
+.candidate-applications-table-wrap .data-table tbody tr td:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.candidate-applications-table-wrap .data-table tbody tr td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+.candidate-applications-table-wrap .data-table th,
+.candidate-applications-table-wrap .data-table td {
+  padding: 0.45rem 0.4rem;
+  vertical-align: middle;
+}
+.candidate-applications-table-wrap .cell-user__name,
+.candidate-applications-table-wrap .cell-user__sub,
+.candidate-applications-table-wrap .cell-muted,
+.candidate-applications-table-wrap .cell-strong { font-size: 0.75rem; }
+.candidate-applications-table-wrap .avatar { width: 30px; height: 30px; font-size: 0.68rem; }
+
 
 .candidate-applications-table-wrap .cell-ellipsis,
 .candidate-applications-table-wrap .cell-nowrap {
@@ -236,21 +259,13 @@
   white-space: nowrap;
 }
 
-.candidate-applications-table-wrap .col-candidate {
-  min-width: 210px;
-}
+.candidate-applications-table-wrap .col-candidate { width: 20%; }
 
-.candidate-applications-table-wrap .col-email {
-  min-width: 180px;
-}
+.candidate-applications-table-wrap .col-email { width: 18%; }
 
-.candidate-applications-table-wrap .col-phone {
-  min-width: 120px;
-}
+.candidate-applications-table-wrap .col-phone { width: 11%; }
 
-.candidate-applications-table-wrap .col-actions {
-  min-width: 88px;
-}
+.candidate-applications-table-wrap .col-actions { width: 72px; text-align: center; }
 
 .candidate-additional-card {
   border: 1px solid var(--color-border);

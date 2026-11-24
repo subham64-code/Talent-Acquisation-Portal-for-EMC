@@ -1,5 +1,4 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Eye, Pencil, Plus, Trash2, UserMinus } from "lucide-react";
 import DataTable, { type Column } from "../../../components/DataTable";
 import Badge from "../../../components/ref/Badge";
@@ -10,6 +9,7 @@ import DatabankToolbar from "./DatabankToolbar";
 import ViewToggle from "./ViewToggle";
 import EmployeeCard from "./EmployeeCard";
 import EmployeeFormModal from "./EmployeeFormModal";
+import EmployeeQuickViewModal from "./EmployeeQuickViewModal";
 import { EmptyStateBlock, formatDate, initials } from "./shared";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery, useInvalidate } from "../../../hooks/useApiQuery";
@@ -22,10 +22,10 @@ export default function FormerEmployeesView({ departments, designations, employm
   onInvalidate: () => void;
 }) {
   const invalidate = useInvalidate();
-  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [editLoading, setEditLoading] = useState(false);
@@ -120,17 +120,18 @@ export default function FormerEmployeesView({ departments, designations, employm
     onInvalidate();
   };
 
-  const deleteEmployee = async () => {
+  const handleDelete = async (mode: "keep"|"current"|"permanent") => {
     if (!deleting) return;
+    if (mode === "keep") { setDeleting(null); return; }
     setDeleteLoading(true);
     try {
-      await hrApi.deleteEmployee(deleting.id);
-      setNotice(`${deleting.fullName} was removed from former employee records.`);
+      await hrApi.deleteEmployee(deleting.id, mode);
+      setNotice(mode === "current" ? `${deleting.fullName} moved to current employees.` : `${deleting.fullName} was deleted permanently.`);
       setDeleting(null);
       invalidate(["employees", "employee"]);
       onInvalidate();
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || "The former employee record could not be removed.");
+      setError(err?.response?.data?.error?.message || "The record could not be updated.");
     } finally {
       setDeleteLoading(false);
     }
@@ -143,7 +144,7 @@ export default function FormerEmployeesView({ departments, designations, employm
       render: (row) => (
         <div className="cell-user">
           <div className="avatar">{initials(row.fullName)}</div>
-          <div className="cell-user__text"><button type="button" className="ta-link cell-user__name" onClick={() => navigate(`/hr/employees/${row.id}`)}>{row.fullName}</button><div className="cell-user__sub">{row.officialEmail}</div></div>
+          <div className="cell-user__text"><button type="button" className="ta-link cell-user__name" onClick={() => setViewingId(row.id)}>{row.fullName}</button><div className="cell-user__sub">{row.officialEmail}</div></div>
         </div>
       ),
     },
@@ -155,10 +156,10 @@ export default function FormerEmployeesView({ departments, designations, employm
     {
       key: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-center",
       render: (row) => (
-        <div className="cell-actions">
-          <button type="button" className="btn btn--ghost btn--icon" onClick={() => navigate(`/hr/employees/${row.id}`)} title="Open employee profile" aria-label={`Open ${row.fullName}`}><Eye size={16} /></button>
+        <div className="cell-actions" style={{ justifyContent: "center", width: "100%" }}>
+          <button type="button" className="btn btn--ghost btn--icon" onClick={() => setViewingId(row.id)} title="View details" aria-label={`View ${row.fullName}`}><Eye size={16} /></button>
           <button type="button" className="btn btn--ghost btn--icon" onClick={() => void openEdit(row)} disabled={editLoading} title="Edit record" aria-label={`Edit ${row.fullName}`}><Pencil size={16} /></button>
           <button type="button" className="btn btn--danger-ghost btn--icon" onClick={() => setDeleting(row)} title="Delete record" aria-label={`Delete ${row.fullName}`}><Trash2 size={16} /></button>
         </div>
@@ -202,7 +203,7 @@ export default function FormerEmployeesView({ departments, designations, employm
       ) : (
         <div className="employee-card-grid">
           {filtered.map((row) => (
-            <EmployeeCard key={row.id} employee={row} onView={(person) => navigate(`/hr/employees/${person.id}`)} onEdit={(person) => void openEdit(person)} onDelete={setDeleting} />
+            <EmployeeCard key={row.id} employee={row} onView={(person) => setViewingId(person.id)} onEdit={(person) => void openEdit(person)} onDelete={setDeleting} />
           ))}
           {!isLoading && filtered.length === 0 && <div className="card" style={{ gridColumn: "1 / -1" }}><EmptyStateBlock icon={UserMinus} title="No former employees found" description="Add a former employee manually or adjust the current search and filter." action={<Button icon={Plus} size="sm" onClick={() => setAddOpen(true)}>Add Former Employee</Button>} /></div>}
         </div>
@@ -210,14 +211,16 @@ export default function FormerEmployeesView({ departments, designations, employm
 
       <EmployeeFormModal open={addOpen || Boolean(editing)} onClose={() => { setAddOpen(false); setEditing(null); }} mode="former" employee={editing} departments={departments} designations={designations} employmentTypes={employmentTypes} onSubmit={save} submitLabel={editing ? "Save Changes" : "Save Former Employee"} />
 
+      <EmployeeQuickViewModal employeeId={viewingId} onClose={() => setViewingId(null)} />
+
       <Modal
         open={Boolean(deleting)}
         onClose={() => (deleteLoading ? undefined : setDeleting(null))}
-        title="Delete former employee record?"
+        title="Delete former employee"
         size="sm"
-        footer={<><Button variant="outline" onClick={() => setDeleting(null)} disabled={deleteLoading}>Keep record</Button><Button variant="danger" onClick={deleteEmployee} loading={deleteLoading}>Delete record</Button></>}
+        footer={<div className="flex flex-wrap gap-2 justify-end"><Button variant="outline" onClick={() => handleDelete("keep")} disabled={deleteLoading}>Keep record</Button><Button variant="secondary" onClick={() => handleDelete("current")} loading={deleteLoading}>Move to current</Button><Button variant="danger" onClick={() => handleDelete("permanent")} loading={deleteLoading}>Delete permanently</Button></div>}
       >
-        <p>{deleting ? `${deleting.fullName} (${deleting.employeeCode}) will be permanently removed from former employee records.` : "The record will be removed."}</p>
+        <p>{deleting ? `Choose action for ${deleting.fullName} (${deleting.employeeCode}).` : ""}</p>
       </Modal>
     </div>
   );

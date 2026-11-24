@@ -227,7 +227,6 @@ Sidebar navigation
 }
 
 
-
 .sidebar__brand-name {
   max-width: 100%;
   font-weight: 700;
@@ -1747,6 +1746,8 @@ Modals & dialogs
 
 .modal__body {
   padding: 1.5rem;
+  overflow: auto;
+  max-height: calc(100vh - 12rem);
 }
 
 .modal__footer {
@@ -2020,6 +2021,21 @@ Data tables
   width: 72px;
   text-align: center;
 }
+
+.data-table th.text-center,
+.data-table td.text-center {
+  text-align: center;
+}
+
+.data-table td.text-center .cell-user,
+.data-table td.text-center .cell-stack,
+.data-table td.text-center .doc-progress,
+.data-table td.text-center .offer-response {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
 
 .data-table .col-application {
   width: 128px;

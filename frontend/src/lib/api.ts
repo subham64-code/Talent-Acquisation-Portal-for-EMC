@@ -87,7 +87,7 @@ export const hrApi = {
   employeeInvitations: (id: string) => api.get(`/employees/${id}/invitations`),
   resendInvitation: (id: string) => api.post(`/employees/${id}/invitations`),
   bulkInvitations: (emails: string[]) => api.post("/employees/bulk-invitations", { emails }),
-  deleteEmployee: (id: string) => api.delete(`/employees/${id}`),
+  deleteEmployee: (id: string, mode: "keep"|"former"|"current"|"permanent"="permanent") => api.delete(`/employees/${id}`, { data: { mode } }),
   onboardEmployeeFromApplication: (applicationId: string, body?: any) => api.post(`/employees/from-application/${applicationId}`, body ?? {}),
   uploadEmployeeCv: (id: string, formData: FormData) => api.post(`/employees/${id}/cv`, formData, { headers: { "Content-Type": "multipart/form-data" } }),
   removeEmployeeCv: (id: string) => api.delete(`/employees/${id}/cv`),

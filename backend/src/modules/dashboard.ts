@@ -169,6 +169,7 @@ router.get(
           d.name,
           d.code,
           (SELECT count(*)::int FROM emc_talent.employees e WHERE e."departmentId" = d.id) AS "totalEmployees",
+          (SELECT count(*)::int FROM emc_talent.employees e WHERE e."departmentId" = d.id AND e.status = 'FORMER') AS "formerEmployees",
           (SELECT count(*)::int FROM emc_talent.employees e WHERE e."departmentId" = d.id AND e."employmentTypeId" IS NOT NULL) AS "fullTime",
           (SELECT count(*)::int FROM emc_talent.job_openings o WHERE o."departmentId" = d.id AND o.status = 'PUBLISHED') AS "activeOpenings",
           (SELECT count(*)::int FROM emc_talent.applications a

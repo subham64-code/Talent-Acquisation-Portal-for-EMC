@@ -208,7 +208,7 @@ export default function Dashboard() {
         eyebrow="Ecometrix · Talent Acquisition"
         title="Recruitment Dashboard"
         subtitle="Live overview of the recruitment pipeline, the upcoming interviews and the hiring activity of the HR team."
-        actions={<Badge variant="blue" dot>Cloud · Live database</Badge>}
+        actions={undefined}
       />
 
       <div className="stats-grid ta-stats-grid" aria-label="Recruitment statistics">
@@ -227,22 +227,29 @@ export default function Dashboard() {
         })}
       </div>
 
-      <div className="card">
-        <div className="card__header">
-          <div><div className="card__title">Recruitment pipeline</div><div className="card__subtitle">{totalStage} applications distributed across {STAGES.length} stages</div></div>
+      <div className="ta-dashboard-grid">
+        <div className="card">
+          <div className="card__header"><div><div className="card__title">Recruitment pipeline</div><div className="card__subtitle">{totalStage} applications across {STAGES.length} stages</div></div></div>
+          <div className="card__body">
+            <ol className="ta-pipeline">
+              {stageCounts.map((stage) => (
+                <li className="ta-pipeline__stage" key={stage.key}>
+                  <div className="ta-pipeline__button">
+                    <div className="ta-pipeline__stage-head"><span className="ta-pipeline__stage-label">{stage.label}</span><span className="ta-pipeline__stage-count">{stage.count}</span></div>
+                    <div className="ta-pipeline__track" aria-hidden="true"><span className="ta-pipeline__bar" style={{ width: `${Math.round((stage.count / maxStageCount) * 100)}%` }} /></div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
-        <div className="card__body">
-          <ol className="ta-pipeline">
-            {stageCounts.map((stage) => (
-              <li className="ta-pipeline__stage" key={stage.key}>
-                <div className="ta-pipeline__button">
-                  <div className="ta-pipeline__stage-head"><span className="ta-pipeline__stage-label">{stage.label}</span><span className="ta-pipeline__stage-count">{stage.count}</span></div>
-                  <div className="ta-pipeline__track" aria-hidden="true"><span className="ta-pipeline__bar" style={{ width: `${Math.round((stage.count / maxStageCount) * 100)}%` }} /></div>
-                  <p className="ta-pipeline__stage-desc">{stage.description}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+        <div className="card">
+          <div className="card__header"><div><div className="card__title">Pipeline chart</div><div className="card__subtitle">Visual stage distribution</div></div></div>
+          <div className="card__body">
+            <div style={{display:'flex',alignItems:'flex-end',gap:10,height:220,padding:'8px 4px'}}>
+              {stageCounts.map(s=>{const h=Math.max(6,Math.round((s.count/maxStageCount)*170)); return <div key={s.key} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}><div style={{fontSize:11,fontWeight:700,color:'var(--ink)'}}>{s.count}</div><div title={`${s.label}: ${s.count}`} style={{width:'100%',maxWidth:34,height:h,background:'linear-gradient(180deg,#84bd26,#659616)',borderRadius:'8px 8px 2px 2px'}} /><div style={{fontSize:10,color:'var(--muted)',textAlign:'center',lineHeight:1.2}}>{s.label}</div></div>;})}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -250,15 +257,15 @@ export default function Dashboard() {
         <div className="card__header">
           <div><div className="card__title">Department-wise pipeline</div><div className="card__subtitle">{departmentPipeline.length} departments in the pipeline · largest pipeline has {departmentMax} application{departmentMax === 1 ? "" : "s"}. Click a department to view every candidate in it.</div></div>
         </div>
-        <DataTable
+        <div style={{maxHeight:320,overflowY:"auto"}}><DataTable
           columns={departmentColumns}
           rows={departmentPipeline}
           rowKey={(department) => department.id}
           loading={false}
           empty={<EmptyStateBlock icon={FileStack} title="No department pipeline yet" description="Applications will appear here once candidates apply to department openings." />}
-          footer={<><span><strong>{applications.length}</strong> total application{applications.length === 1 ? "" : "s"}</span><span className="cell-muted">Select a department or View people to inspect every candidate and their full submitted details</span></>}
+          footer={<><span><strong>{applications.length}</strong> applications</span></>}
           onRowClick={selectDepartment}
-        />
+        /></div>
       </div>
 
       <DepartmentPeoplePanel department={selectedDepartment} onClear={() => setSelectedDepartment(null)} />

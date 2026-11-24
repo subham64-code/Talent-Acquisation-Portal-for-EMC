@@ -65,7 +65,7 @@ export default function AIScreening() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [runOpen, setRunOpen] = useState(false);
+  const [screeningPosition, setScreeningPosition] = useState("");
   const [selectedOpening, setSelectedOpening] = useState("");
   const [running, setRunning] = useState(false);
   const [jobProgress, setJobProgress] = useState<{ total: number; processed: number; status: string } | null>(null);
@@ -106,7 +106,7 @@ export default function AIScreening() {
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const statuses = ["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "ON_HOLD", "REJECTED"];
+      const statuses = ["APPLIED", "UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "ON_HOLD", "REJECTED"];
       const res = await hrApi.applications({ page: 1, pageSize: 100, status: statuses.join(",") });
       setQueue(res?.data?.items ?? []);
       setError("");
@@ -122,21 +122,24 @@ export default function AIScreening() {
     hrApi.openings({ page: 1, pageSize: 100 }).then((r: any) => setPositions(r?.data?.items ?? [])).catch(() => setPositions([]));
   }, []);
 
-  const runAiScreening = async () => {
-    if (!selectedOpening) {
+  const runAiScreening = async (jobOpeningIdArg?: string) => {
+    const jobOpeningIdToRun = jobOpeningIdArg || selectedOpening;
+    if (!jobOpeningIdToRun) {
       setError("Select a job opening before running AI screening.");
       return;
     }
+    setSelectedOpening(jobOpeningIdToRun);
+    setPositionFilter(jobOpeningIdToRun);
+    setScreeningPosition(jobOpeningIdToRun);
     setRunning(true);
     setError("");
     setNotice("");
     setJobProgress({ total: 0, processed: 0, status: "PENDING" });
     try {
-      const res = await hrApi.aiRun({ jobOpeningId: selectedOpening });
+      const res = await hrApi.aiRun({ jobOpeningId: jobOpeningIdToRun });
       const jobId = res?.data?.jobId ?? (res as any)?.jobId;
       if (!jobId) throw new Error("The screening job could not be started.");
 
-      // The request returns immediately. Poll the persisted job until it settles.
       let job: any = null;
       for (let attempt = 0; attempt < 600; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -147,8 +150,6 @@ export default function AIScreening() {
           processed: Number(job?.processed ?? 0),
           status: String(job?.status ?? "PENDING"),
         });
-        // Refresh the queue periodically so evaluated candidates appear as soon
-        // as they are saved, instead of waiting for the whole batch to finish.
         if (attempt % 5 === 0) await load(true);
         if (["COMPLETED", "FAILED"].includes(job?.status)) break;
       }
@@ -159,9 +160,8 @@ export default function AIScreening() {
         const parts = [`${job.succeeded ?? 0} evaluated`];
         if (job.skipped) parts.push(`${job.skipped} already evaluated`);
         if (job.failed) parts.push(`${job.failed} failed`);
-        setNotice(`AI screening complete · ${parts.join(" · ")}.`);
+        setNotice(`AI screening complete for selected position - ${parts.join(", ")}.`);
       }
-      setRunOpen(false);
       await load(true);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || err?.message || "AI screening failed.");
@@ -290,14 +290,13 @@ export default function AIScreening() {
       setNotice(kind === "pass" ? "Candidate passed the screening and is awaiting shortlisting." : kind === "hold" ? "Application placed on hold." : kind === "reject" ? "Application rejected at screening." : "Screening remarks recorded.");
       setRemarks("");
       setRemarkError("");
-      if (nextCandidate && nextCandidate.id !== review.id) {
-        await Promise.all([load(true), openReview(nextCandidate)]);
-      } else {
-        await load(true);
-        setReview(null);
-        setDetail(null);
-        if (kind === "pass") navigate("/hr/shortlisting");
-      }
+      await load(true);
+      setReview(null);
+      setDetail(null);
+      if (kind === "pass") navigate("/hr/shortlisting");
+      if (kind === "hold") navigate("/hr/employees?tab=hold");
+      if (kind === "reject") navigate("/hr/submissions?status=REJECTED");
+
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Could not save the screening decision.");
     } finally {
@@ -386,42 +385,11 @@ export default function AIScreening() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Ecometrix · Talent Acquisition"
-        title="CV Screening"
-        subtitle="Review candidate CVs, evaluate job requirement matching, and record HR screening decisions."
-        actions={(<><Button variant="secondary" icon={Bot} onClick={() => setRunOpen((current) => !current)}>Run AI Screening</Button><Button variant="outline" icon={RefreshCw} onClick={() => void load(true)}>Refresh data</Button></>)}
+        eyebrow="Ecometrix Talent Acquisition"
+        title="AI Screening"
+        subtitle="Select a job position and run AI screening. Recommendations appear in the table automatically."
+        actions={undefined}
       />
-
-      {runOpen && (
-        <section className="card" style={{ marginBottom: "1rem" }}>
-          <div className="card__header">
-            <div><div className="card__title">Run AI Screening</div><div className="card__subtitle">Rank every application for a vacancy against the required skills, experience and qualifications</div></div>
-          </div>
-          <div className="card__body">
-            <div className="grid grid-cols-1 md:grid-cols-[2fr_auto] gap-3 items-end">
-              <div className="field" style={{ margin: 0 }}>
-                <Select label="Job opening" required value={selectedOpening} onChange={(event: any) => setSelectedOpening(event.target.value)} placeholder="Select a vacancy to screen…" options={positions.map((item: any) => ({ value: item.id, label: item.title }))} />
-              </div>
-              <Button icon={Sparkles} onClick={runAiScreening} loading={running}>Run screening</Button>
-            </div>
-            {jobProgress && (
-              <div className="screening-progress" role="status" aria-live="polite">
-                <div className="screening-progress__label">
-                  <strong>{jobProgress.status === "PROCESSING" ? "Evaluating CVs" : jobProgress.status.toLowerCase()}</strong>
-                  <span>{jobProgress.processed} of {jobProgress.total || "…"} candidates processed</span>
-                </div>
-                <div className="screening-progress__track">
-                  <div
-                    className="screening-progress__bar"
-                    style={{ width: `${jobProgress.total ? Math.min(100, (jobProgress.processed / jobProgress.total) * 100) : 0}%` }}
-                  />
-                </div>
-                <p className="screening-progress__hint">You can keep this page open — results appear as each candidate finishes.</p>
-              </div>
-            )}
-          </div>
-        </section>
-      )}
 
       {notice && <div className="notice notice--success" role="status"><div className="notice__body">{notice}</div></div>}
       {error && <div className="notice notice--error" role="alert"><div className="notice__body">{error}</div></div>}
@@ -430,13 +398,14 @@ export default function AIScreening() {
         {statsCards.map((card) => { const Icon = card.icon; const isActive = kpi === card.key; return <button type="button" className={`stat-card ${isActive ? "stat-card--active" : "stat-card--muted"}`} key={card.key} onClick={() => void openKpi(card.key)} aria-pressed={isActive} aria-label={`Open ${card.label} details`}><div className={`stat-card__icon ${isActive ? "stat-card__icon--active" : "stat-card__icon--muted"}`}><Icon size={20} aria-hidden="true" /></div><div className="stat-card__content"><div className="stat-card__label">{card.label}</div><div className="stat-card__value">{card.value}</div><div className="stat-card__meta">{card.meta}</div></div></button>; })}
       </div>
 
-      <section className="ta-applications-toolbar" aria-label="Screening filters">
+      <section className="ta-applications-toolbar" aria-label="Screening filters" style={{ overflow: "visible", position: "relative", zIndex: 20 }}>
         <div className="ta-applications-toolbar__row">
           <div className="search-box ta-applications-toolbar__search"><span className="search-box__icon"><Search size={16} aria-hidden="true" /></span><input type="search" className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search candidate name, application ID or position" aria-label="Search the screening queue" /></div>
           <Select aria-label="Filter by position" value={positionFilter} onChange={(event) => setPositionFilter(event.target.value)} placeholder="All positions" options={positions.map((item: any) => ({ value: item.id, label: item.title }))} />
           <Select aria-label="Filter by screening status" value={["UNDER_REVIEW", "AI_RECOMMENDED", "SHORTLISTED", "ON_HOLD", "REJECTED"].includes(statusFilter) ? statusFilter : ""} onChange={(event) => setStatusFilter((event.target.value as any) || "all")} placeholder="All screening statuses" options={[{ value: "UNDER_REVIEW", label: "Under Review" }, { value: "AI_RECOMMENDED", label: "AI Recommended" }, { value: "SHORTLISTED", label: "Passed" }, { value: "ON_HOLD", label: "On Hold" }, { value: "REJECTED", label: "Rejected" }]} />
           <Select aria-label="Filter by AI evaluation status" value={aiEvaluationFilter} onChange={(event) => setAiEvaluationFilter(event.target.value)} options={[{ value: "", label: "All AI evaluation states" }, ...STATE_OPTIONS]} />
           <Select aria-label="Filter by HR decision" value={hrDecisionFilter} onChange={(event) => setHrDecisionFilter(event.target.value)} options={DECISION_OPTIONS} />
+          <Button variant="secondary" size="sm" icon={Sparkles} onClick={() => void runAiScreening(positionFilter)} loading={running} disabled={!positionFilter}>AI Screening</Button>
         </div>
         <div className="ta-applications-toolbar__meta">
           <div className="filters">

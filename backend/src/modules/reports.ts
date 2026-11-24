@@ -54,31 +54,184 @@ async function buildExcel(rows: Record<string, unknown>[], _title: string): Prom
   return Buffer.from(buffer);
 }
 
-async function buildPdf(rows: Record<string, unknown>[], title: string): Promise<Buffer> {
+function formatReportValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (value instanceof Date) return value.toLocaleString();
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  const text = String(value).trim();
+  if (!text) return "-";
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const d = new Date(text);
+    if (!Number.isNaN(d.getTime())) return d.toLocaleString();
+  }
+  return text;
+}
+
+function prettyHeader(key: string): string {
+  return key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+async function buildPdf(
+  rows: Record<string, unknown>[],
+  title: string,
+  meta: { filters?: string[]; total?: number } = {},
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 36, bufferPages: true });
     const chunks: Buffer[] = [];
-    doc.on("data", (c) => chunks.push(c));
+    doc.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
-    doc.fontSize(16).fillColor("#198754").text("EMC - " + title, { align: "center" });
-    doc.fontSize(10).fillColor("#5c5c5c").text(`Generated: ${new Date().toLocaleString()}`, { align: "center" });
-    doc.moveDown();
-    if (rows.length) {
-      const headers = Object.keys(rows[0]);
-      let x = 40;
-      let y = doc.y;
-      doc.fontSize(8).fillColor("#171717");
-      for (const h of headers) { doc.text(h, x, y, { width: 90 }); x += 95; }
-      doc.moveDown();
-      for (const r of rows) {
-        x = 40;
-        for (const h of headers) { doc.text(String(r[h] ?? ""), x, doc.y, { width: 90 }); x += 95; }
-        doc.moveDown();
-      }
+
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const pageBottom = doc.page.height - doc.page.margins.bottom - 28;
+    const generatedAt = new Date().toLocaleString();
+    const filters = (meta.filters ?? []).filter(Boolean);
+    const total = meta.total ?? rows.length;
+
+    const drawPageHeader = () => {
+      const x = doc.page.margins.left;
+      const top = doc.page.margins.top;
+      doc.save();
+      doc.roundedRect(x, top, pageWidth, 56, 6).fill("#166534");
+      doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(18).text("EMC Talent Acquisition Portal", x + 14, top + 10, {
+        width: pageWidth - 28,
+        lineBreak: false,
+        ellipsis: true,
+      });
+      doc.font("Helvetica").fontSize(11).fillColor("#dcfce7").text(title, x + 14, top + 33, {
+        width: pageWidth - 28,
+        lineBreak: false,
+        ellipsis: true,
+      });
+      doc.restore();
+
+      const metaY = top + 66;
+      doc.fillColor("#374151").font("Helvetica").fontSize(9);
+      const metaParts = [`Generated: ${generatedAt}`, `Records: ${total}`];
+      if (filters.length) metaParts.push(`Filters: ${filters.join(" | ")}`);
+      doc.text(metaParts.join("    "), x, metaY, { width: pageWidth });
+      const lineY = doc.y + 6;
+      doc.save().moveTo(x, lineY).lineTo(x + pageWidth, lineY).strokeColor("#d1d5db").lineWidth(1).stroke().restore();
+      doc.y = lineY + 10;
+    };
+
+    const drawNoData = () => {
+      doc.moveDown(2);
+      doc.fillColor("#6b7280").font("Helvetica").fontSize(11).text("No records found for the selected filters.", {
+        width: pageWidth,
+        align: "center",
+      });
+    };
+
+    drawPageHeader();
+
+    if (!rows.length) {
+      drawNoData();
     } else {
-      doc.text("No records found.");
+      const headers = Object.keys(rows[0]);
+      const sampleRows = rows.slice(0, 40);
+      const weights = headers.map((h) => {
+        const headerLen = prettyHeader(h).length;
+        const contentLen = sampleRows.reduce((max, r) => Math.max(max, formatReportValue(r[h]).length), 0);
+        return Math.min(34, Math.max(10, Math.max(headerLen, Math.min(contentLen, 28))));
+      });
+      const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
+      const colWidths = weights.map((w) => (w / weightSum) * pageWidth);
+      const widthFix = pageWidth - colWidths.reduce((a, b) => a + b, 0);
+      colWidths[colWidths.length - 1] += widthFix;
+
+      const drawTableHeader = () => {
+        const x = doc.page.margins.left;
+        const y = doc.y;
+        const headerHeight = 24;
+        doc.save();
+        doc.rect(x, y, pageWidth, headerHeight).fill("#f3f4f6");
+        doc.rect(x, y, pageWidth, headerHeight).strokeColor("#cbd5e1").lineWidth(0.6).stroke();
+        let cx = x;
+        headers.forEach((h, i) => {
+          const w = colWidths[i];
+          doc.fillColor("#111827").font("Helvetica-Bold").fontSize(8).text(prettyHeader(h), cx + 4, y + 7, {
+            width: w - 8,
+            height: 12,
+            ellipsis: true,
+            lineBreak: false,
+          });
+          cx += w;
+          if (i < headers.length - 1) {
+            doc.moveTo(cx, y).lineTo(cx, y + headerHeight).strokeColor("#cbd5e1").lineWidth(0.5).stroke();
+          }
+        });
+        doc.restore();
+        doc.y = y + headerHeight;
+      };
+
+      drawTableHeader();
+
+      rows.forEach((row, rowIndex) => {
+        const values = headers.map((h) => formatReportValue(row[h]));
+        doc.font("Helvetica").fontSize(8);
+        const heights = values.map((v, i) => doc.heightOfString(v || "-", { width: Math.max(20, colWidths[i] - 8), align: "left" }));
+        const rowHeight = Math.min(72, Math.max(20, ...heights.map((h) => Math.ceil(h) + 8)));
+
+        if (doc.y + rowHeight > pageBottom) {
+          doc.addPage();
+          drawPageHeader();
+          drawTableHeader();
+        }
+
+        const x = doc.page.margins.left;
+        const y = doc.y;
+        doc.save();
+        if (rowIndex % 2 === 1) doc.rect(x, y, pageWidth, rowHeight).fill("#fafafa");
+        doc.rect(x, y, pageWidth, rowHeight).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+        let cx = x;
+        values.forEach((v, i) => {
+          const w = colWidths[i];
+          doc.fillColor("#1f2937").font("Helvetica").fontSize(8).text(v || "-", cx + 4, y + 4, {
+            width: Math.max(20, w - 8),
+            height: rowHeight - 8,
+            ellipsis: true,
+          });
+          cx += w;
+          if (i < headers.length - 1) {
+            doc.moveTo(cx, y).lineTo(cx, y + rowHeight).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+          }
+        });
+        doc.restore();
+        doc.y = y + rowHeight;
+      });
     }
+
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      const left = doc.page.margins.left;
+      const bottomY = doc.page.height - doc.page.margins.bottom - 12;
+      doc.save();
+      doc.moveTo(left, bottomY - 6).lineTo(left + pageWidth, bottomY - 6).strokeColor("#d1d5db").lineWidth(0.5).stroke();
+      doc.fillColor("#6b7280").font("Helvetica").fontSize(8).text("Confidential - EMC HR Report", left, bottomY, {
+        width: pageWidth / 2,
+        align: "left",
+        lineBreak: false,
+      });
+      doc.text(`Page ${i - range.start + 1} of ${range.count}`, left + pageWidth / 2, bottomY, {
+        width: pageWidth / 2,
+        align: "right",
+        lineBreak: false,
+      });
+      doc.restore();
+    }
+
     doc.end();
   });
 }
@@ -269,7 +422,14 @@ router.get(
       return res.send(buffer);
     }
     if (format === "pdf") {
-      const buffer = await buildPdf(rows, title);
+      const filterParts = [
+        from ? `From ${from.toLocaleDateString()}` : "",
+        to ? `To ${to.toLocaleDateString()}` : "",
+        departmentId ? `Department ID ${departmentId}` : "",
+        jobOpeningId ? `Job Opening ID ${jobOpeningId}` : "",
+        status ? `Status ${status}` : "",
+      ].filter(Boolean);
+      const buffer = await buildPdf(rows, title, { filters: filterParts, total: totalRows || rows.length });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${fileName}.pdf"`);
       return res.send(buffer);

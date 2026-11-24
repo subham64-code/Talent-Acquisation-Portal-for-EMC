@@ -39,7 +39,7 @@ const LABELS: Array<{ value: string; label: string }> = [
 
 export default function Submissions({
   title = "Candidate Applications",
-  subtitle = "Newly applied candidates from the Career Portal. Once HR progresses a candidate, the application leaves this list and moves to its next stage.",
+  subtitle = "Newly applied candidates by job position. Review candidate data and move them to the next stage.",
   initialStatus = "",
   lockedStatus = false,
 }: {
@@ -51,7 +51,7 @@ export default function Submissions({
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(() => searchParams.get("search") || "");
   const [jobOpeningId, setJobOpeningId] = useState(() => searchParams.get("jobOpeningId") || "");
-  const [status, setStatus] = useState(() => lockedStatus ? (initialStatus || searchParams.get("status") || "") : NEW_APPLICATION_STATUS);
+  const [status, setStatus] = useState(() => lockedStatus ? (initialStatus || searchParams.get("status") || "") : "");
   const [dateFrom, setDateFrom] = useState(() => searchParams.get("dateFrom") || "");
   const [dateTo, setDateTo] = useState(() => searchParams.get("dateTo") || "");
   const [page, setPage] = useState(() => Number(searchParams.get("page")) || 1);
@@ -196,9 +196,9 @@ export default function Submissions({
     {
       key: "actions",
       header: "Actions",
-      className: "text-right col-actions",
+      className: "text-center col-actions",
       render: (a) => (
-        <div className="cell-actions cell-actions--nowrap">
+        <div className="cell-actions cell-actions--nowrap" style={{ justifyContent: "center", width: "100%", paddingRight: 12 }}>
           <button type="button" className="btn btn--ghost btn--icon" title="View application details" aria-label={`View application details of ${a.candidate?.fullName}`} onClick={() => void openDetail(a)}><Eye size={16} /></button>
         </div>
       ),
@@ -233,7 +233,7 @@ export default function Submissions({
             <label className="ta-position-filter__label" htmlFor="applications-position"><Briefcase size={15} aria-hidden="true" /> Position</label>
             <Select id="applications-position" aria-label="Filter by position" value={jobOpeningId} onChange={(event) => setJobOpeningId(event.target.value)} placeholder="All Positions" options={openings.map((o: any) => ({ value: o.id, label: o.title }))} />
           </div>
-          {!lockedStatus && <span className="filters-summary">New applications only</span>}
+          {!lockedStatus && <Select aria-label="Filter by status" value={status} onChange={(event) => setStatus(event.target.value)} placeholder="All statuses" options={LABELS} />}
           <label className="ta-inline-field"><span className="ta-inline-field__label">From</span><input type="date" className="input" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Applications from date" /></label>
           <label className="ta-inline-field"><span className="ta-inline-field__label">To</span><input type="date" className="input" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Applications to date" /></label>
         </div>

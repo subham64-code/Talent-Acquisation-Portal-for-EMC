@@ -220,27 +220,27 @@ export default function HRLogin() {
   );
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center p-4 sm:p-6">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <img src="/assets/ecometrix-logo.png" alt="Ecometrix logo" className="mx-auto w-[150px] h-auto object-contain" />
-          <p className="mt-3 text-sm font-medium text-gray-700">Ecometrix Consultants Pvt. Ltd.</p>
+    <div className="h-[100dvh] overflow-hidden bg-white flex items-center justify-center px-4 py-2 sm:px-6">
+      <div className="w-full max-w-[430px] max-h-full overflow-hidden">
+        <div className="text-center mb-1">
+          <img src="/assets/ecometrix-logo.png" alt="Ecometrix logo" className="mx-auto w-[112px] h-auto object-contain" />
+          <p className="mt-0.5 text-[13px] font-medium text-gray-700">Ecometrix Consultants Pvt. Ltd.</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-[var(--border)] overflow-hidden">
-          <div className="px-6 sm:px-8 pt-7 pb-6">
-            <div className="text-center mb-6">
+          <div className="px-5 sm:px-6 pt-4 pb-4">
+            <div className="text-center mb-4">
               <div className="inline-flex items-center justify-center gap-2 text-gray-900">
-                <IdCard size={22} className="text-brand-600" />
-                <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Talent Acquisition Portal</h1>
+                <IdCard size={20} className="text-brand-600" />
+                <h1 className="text-[1.35rem] font-semibold tracking-tight leading-tight">Talent Acquisition Portal</h1>
               </div>
-              <p className="mt-1.5 text-sm text-gray-500">Talent Acquisition &amp; Employee CV Repository</p>
+              <p className="mt-1 text-[13px] text-gray-500">Talent Acquisition &amp; Employee CV Repository</p>
             </div>
 
-            <div className="rounded-2xl border border-[var(--border)] bg-white p-5 sm:p-6">
-              <h2 className="text-lg font-semibold text-gray-900">Sign In</h2>
+            <div className="rounded-2xl border border-[var(--border)] bg-white p-4">
+              <h2 className="text-[1.05rem] font-semibold text-gray-900">Sign In</h2>
 
-              <div className="mt-4 grid grid-cols-2 gap-2" role="tablist" aria-label="Login type">
+              <div className="mt-3 grid grid-cols-2 gap-2" role="tablist" aria-label="Login type">
                 {(["HR", "ADMIN"] as Role[]).map((role) => (
                   <button
                     key={role}
@@ -410,9 +410,9 @@ export default function HRLogin() {
           </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-gray-500">
-          <a href={careerSiteUrl} className="hover:text-gray-700 hover:underline">← Back to careers site</a>
-          <span className="mx-2">·</span>© 2026 Ecometrix Consultants Pvt. Ltd. All rights reserved.
+        <p className="mt-2 text-center text-[11px] text-gray-500">
+          <a href={careerSiteUrl} className="hover:text-gray-700 hover:underline">Back to careers site</a>
+          <span className="mx-2">|</span>2026 Ecometrix Consultants Pvt. Ltd.
         </p>
       </div>
     </div>

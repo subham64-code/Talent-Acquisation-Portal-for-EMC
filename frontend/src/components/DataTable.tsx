@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
-  header: string;
+  header: ReactNode;
   render: (row: T, index: number) => ReactNode;
   /** Hidden on small screens inside the mobile card view. */
   hideOnMobile?: boolean;
@@ -74,7 +74,7 @@ export default function DataTable<T>({
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.key} className={c.className}>{c.header}</th>
+                <th key={c.key} className={c.className} style={c.className?.includes("text-right") ? { textAlign: "right" } : c.className?.includes("text-center") ? { textAlign: "center" } : undefined}>{c.header}</th>
               ))}
             </tr>
           </thead>
@@ -88,7 +88,7 @@ export default function DataTable<T>({
                 onKeyDown={(event) => handleRowKeyDown(event, row, i)}
               >
                 {columns.map((c) => (
-                  <td key={c.key} className={c.className}>{c.render(row, i)}</td>
+                  <td key={c.key} className={c.className} style={c.className?.includes("text-right") ? { textAlign: "right" } : c.className?.includes("text-center") ? { textAlign: "center" } : undefined}>{c.render(row, i)}</td>
                 ))}
               </tr>
             ))}

@@ -27,18 +27,34 @@ async function hasValidatedSubmission(employeeId: string): Promise<boolean> {
   return Boolean(validated);
 }
 
+async function nextEmployeeCode(): Promise<string> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `EMC${year}${month}`;
+  const existing = await prisma.employee.findMany({ where: { employeeCode: { startsWith: prefix } }, select: { employeeCode: true } });
+  const used = new Set<number>();
+  for (const row of existing) {
+    const m = /([AJ])(\d+)$/.exec(row.employeeCode.slice(prefix.length));
+    if (m) used.add(Number.parseInt(m[2], 10));
+  }
+  let seq = 1;
+  while (used.has(seq)) seq += 1;
+  return `${prefix}J${seq}`;
+}
+
 const empSchema = z.object({
-  employeeCode: z.string().min(2).max(30),
+  employeeCode: z.string().min(2).max(30).optional(),
   fullName: z.string().min(2).max(120),
   officialEmail: z.string().email(),
   personalEmail: z.string().email().optional().nullable(),
-  mobile: z.string().optional().nullable(),
+  mobile: z.string().regex(/^\d{10}$/, "Enter a valid 10-digit mobile number.").optional().nullable(),
   departmentId: z.string().min(1).optional().nullable(),
   designationId: z.string().min(1).optional().nullable(),
   qualification: z.string().optional().nullable(),
   graduationYear: z.coerce.number().int().min(1900).max(2100).optional().nullable(),
-  totalExperience: z.coerce.number().nonnegative().optional().nullable(),
-  relevantExperience: z.coerce.number().nonnegative().optional().nullable(),
+  totalExperience: z.coerce.number().int().min(0).max(60).optional().nullable(),
+  relevantExperience: z.coerce.number().int().min(0).max(60).optional().nullable(),
   previousOrganization: z.string().optional().nullable(),
   specialization: z.string().optional().nullable(),
   employmentTypeId: z.string().min(1).optional().nullable(),
@@ -347,17 +363,39 @@ router.post(
   }),
 );
 
+const deleteSchema = z.object({
+  mode: z.enum(["keep", "former", "current", "permanent"]).default("permanent"),
+});
+
 router.delete(
   "/:id",
   requirePermission("employees.manage"),
   asyncHandler(async (req, res) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(req.params);
+    const parsed = deleteSchema.safeParse(req.body ?? {});
+    if (!parsed.success) throw ApiError.badRequest("Invalid input.", parsed.error.flatten());
+    const mode = parsed.data.mode;
     const employee = await prisma.employee.findUnique({ where: { id } });
     if (!employee) throw ApiError.notFound("Employee not found.");
+
+    if (mode === "keep") return ok(res, { message: "Employee record kept.", item: employee });
+    if (mode === "former") {
+      const item = await prisma.employee.update({ where: { id }, data: { status: "FORMER", leavingDate: employee.leavingDate ?? new Date() } });
+      await cache.peopleChanged();
+      await logAudit(req, { action: "EMPLOYEE_MOVE_FORMER", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
+      return ok(res, { message: "Employee moved to former employees.", item });
+    }
+    if (mode === "current") {
+      const item = await prisma.employee.update({ where: { id }, data: { status: "EXISTING", leavingDate: null } });
+      await cache.peopleChanged();
+      await logAudit(req, { action: "EMPLOYEE_MOVE_CURRENT", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
+      return ok(res, { message: "Employee moved to current employees.", item });
+    }
+
     await prisma.employee.delete({ where: { id } });
     await cache.peopleChanged();
-    await logAudit(req, { action: "EMPLOYEE_DELETE", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email, metadata: { officialEmail: employee.officialEmail } });
-    return ok(res, { message: "Employee deleted." });
+    await logAudit(req, { action: "EMPLOYEE_DELETE", entityType: "Employee", entityId: id, actorId: req.auth!.subjectId, actorEmail: req.auth!.email });
+    return ok(res, { message: "Employee deleted permanently." });
   }),
 );
 
@@ -466,7 +504,7 @@ router.post(
       }
     }
 
-    const employeeCode = "EMP" + Date.now().toString(36).toUpperCase().slice(-6) + Math.random().toString(36).slice(2, 5).toUpperCase();
+    const employeeCode = await nextEmployeeCode();
     const employee = await prisma.employee.create({
       data: {
         employeeCode,

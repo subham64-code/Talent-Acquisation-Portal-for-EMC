@@ -100,6 +100,7 @@ export const env = {
   smtpRejectUnauthorized: bool("SMTP_REJECT_UNAUTHORIZED", true),
   smtpUser: str("SMTP_USER", ""),
   smtpPass: str("SMTP_PASS", ""),
+  resendApiKey: str("RESEND_API_KEY", ""),
   mailFrom: str("MAIL_FROM", "EMC Talent Acquisition <no-reply@emc.example>"),
   mailReplyTo: str("MAIL_REPLY_TO", "hr@emc.example"),
 
@@ -132,6 +133,7 @@ export const env = {
 };
 
 export const smtpConfigured = Boolean(env.smtpHost && env.smtpUser && env.smtpPass);
+export const resendConfigured = Boolean(env.resendApiKey);
 
 if (isProd) {
   if (!env.jwtSecret || env.jwtSecret.includes("change-me")) {

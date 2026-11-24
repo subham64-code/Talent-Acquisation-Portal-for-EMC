@@ -10,6 +10,7 @@ import DatabankToolbar from "./DatabankToolbar";
 import ViewToggle from "./ViewToggle";
 import EmployeeCard from "./EmployeeCard";
 import EmployeeFormModal from "./EmployeeFormModal";
+import EmployeeQuickViewModal from "./EmployeeQuickViewModal";
 import { EmptyStateBlock, formatDate, initials } from "./shared";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery, useInvalidate } from "../../../hooks/useApiQuery";
@@ -31,6 +32,7 @@ export default function CurrentEmployeesView({ departments, designations, employ
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<any>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [notice, setNotice] = useState("");
@@ -111,17 +113,18 @@ export default function CurrentEmployeesView({ departments, designations, employ
     onInvalidate();
   };
 
-  const deleteEmployee = async () => {
+  const handleDelete = async (mode: "keep"|"former"|"permanent") => {
     if (!deleting) return;
+    if (mode === "keep") { setDeleting(null); return; }
     setDeleteLoading(true);
     try {
-      await hrApi.deleteEmployee(deleting.id);
-      setNotice(`${deleting.fullName} was removed from the current employee databank.`);
+      await hrApi.deleteEmployee(deleting.id, mode);
+      setNotice(mode === "former" ? `${deleting.fullName} moved to former employees.` : `${deleting.fullName} was deleted permanently.`);
       setDeleting(null);
       invalidate(["employees", "employee"]);
       onInvalidate();
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || "The employee could not be removed.");
+      setError(err?.response?.data?.error?.message || "The employee could not be updated.");
     } finally {
       setDeleteLoading(false);
     }
@@ -147,10 +150,10 @@ export default function CurrentEmployeesView({ departments, designations, employ
     {
       key: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-center",
       render: (row) => (
-        <div className="cell-actions">
-          <button type="button" className="btn btn--ghost btn--icon" onClick={() => navigate(`/hr/employees/${row.id}`)} title="View profile" aria-label={`View ${row.fullName}`}><Eye size={16} /></button>
+        <div className="cell-actions" style={{ justifyContent: "center", width: "100%" }}>
+          <button type="button" className="btn btn--ghost btn--icon" onClick={() => setViewingId(row.id)} title="View details" aria-label={`View ${row.fullName}`}><Eye size={16} /></button>
           <button type="button" className="btn btn--ghost btn--icon" onClick={() => setEditing(row)} title="Edit employee" aria-label={`Edit ${row.fullName}`}><Pencil size={16} /></button>
           <button type="button" className="btn btn--danger-ghost btn--icon" onClick={() => setDeleting(row)} title="Delete employee" aria-label={`Delete ${row.fullName}`}><Trash2 size={16} /></button>
         </div>
@@ -216,7 +219,7 @@ export default function CurrentEmployeesView({ departments, designations, employ
       ) : (
         <div className="employee-card-grid">
           {filtered.map((row) => (
-            <EmployeeCard key={row.id} employee={row} onView={(item) => navigate(`/hr/employees/${item.id}`)} onEdit={setEditing} onDelete={setDeleting} />
+            <EmployeeCard key={row.id} employee={row} onView={(item) => setViewingId(item.id)} onEdit={setEditing} onDelete={setDeleting} />
           ))}
           {!isLoading && filtered.length === 0 && <div className="card" style={{ gridColumn: "1 / -1" }}><EmptyStateBlock icon={UsersRound} title="No employees match this view" description="Adjust your search or filters, or add a new employee to the databank." action={<Button icon={Plus} size="sm" onClick={() => setAddOpen(true)}>Add Employee</Button>} /></div>}
         </div>
@@ -224,14 +227,16 @@ export default function CurrentEmployeesView({ departments, designations, employ
 
       <EmployeeFormModal open={addOpen || Boolean(editing)} onClose={() => { setAddOpen(false); setEditing(null); }} mode="current" employee={editing} departments={departments} designations={designations} employmentTypes={employmentTypes} onSubmit={save} submitLabel={editing ? "Save Changes" : "Save Employee"} />
 
+      <EmployeeQuickViewModal employeeId={viewingId} onClose={() => setViewingId(null)} />
+
       <Modal
         open={Boolean(deleting)}
         onClose={() => (deleteLoading ? undefined : setDeleting(null))}
-        title="Delete employee record?"
+        title="Delete employee"
         size="sm"
-        footer={<><Button variant="outline" onClick={() => setDeleting(null)} disabled={deleteLoading}>Keep employee</Button><Button variant="danger" onClick={deleteEmployee} loading={deleteLoading}>Delete employee</Button></>}
+        footer={<div className="flex flex-wrap gap-2 justify-end"><Button variant="outline" onClick={() => handleDelete("keep")} disabled={deleteLoading}>Keep employee</Button><Button variant="secondary" onClick={() => handleDelete("former")} loading={deleteLoading}>Move to former</Button><Button variant="danger" onClick={() => handleDelete("permanent")} loading={deleteLoading}>Delete permanently</Button></div>}
       >
-        <p>{deleting ? `${deleting.fullName} (${deleting.employeeCode}) will be removed from the current employee databank. This does not create a former employee record.` : "The employee will be removed."}</p>
+        <p>{deleting ? `Choose action for ${deleting.fullName} (${deleting.employeeCode}).` : ""}</p>
       </Modal>
     </div>
   );

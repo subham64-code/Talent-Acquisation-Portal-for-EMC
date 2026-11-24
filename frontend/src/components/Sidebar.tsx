@@ -71,7 +71,7 @@ const GROUPS: NavGroup[] = [
       { label: "All Employees", to: "/hr/employees", icon: UsersRound, permission: SECTION_PERMISSIONS.employees, match: employeeTab("all") },
       { label: "Current Employees", to: "/hr/employees?tab=current", icon: UserCheck, permission: SECTION_PERMISSIONS.employees, match: employeeTab("current") },
       { label: "Former Employees", to: "/hr/employees?tab=former", icon: UserMinus, permission: SECTION_PERMISSIONS.employees, match: employeeTab("former") },
-      { label: "Invitations", to: "/hr/employees?tab=invitations", icon: Mail, permission: SECTION_PERMISSIONS.employees, match: employeeTab("invitations") },
+      { label: "Invitations", to: "/hr/employees?tab=invitations", icon: Send, permission: SECTION_PERMISSIONS.employees, match: employeeTab("invitations") },
       { label: "Submissions", to: "/hr/employees?tab=submissions", icon: FileText, permission: SECTION_PERMISSIONS.employees, match: employeeTab("submissions") },
       { label: "On Hold", to: "/hr/employees?tab=hold", icon: PauseCircle, permission: SECTION_PERMISSIONS.employees, match: employeeTab("hold") },
       { label: "Master Department", to: "/hr/employees?tab=departments", icon: Building2, permission: SECTION_PERMISSIONS.departments, match: employeeTab("departments") },

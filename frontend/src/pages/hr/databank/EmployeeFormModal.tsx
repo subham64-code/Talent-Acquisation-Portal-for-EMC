@@ -141,7 +141,8 @@ export default function EmployeeFormModal({
     if (!values.employeeId.trim()) next.employeeId = "Employee ID is required.";
     if (!values.fullName.trim()) next.fullName = "Full name is required.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(values.email.trim())) next.email = "Enter a valid email address.";
-    if (!/^\+?[\d\s()-]{7,20}$/.test(values.contactNumber.trim())) next.contactNumber = "Enter a valid contact number.";
+    const contactDigits = values.contactNumber.replace(/\D/g, "");
+    if (contactDigits.length !== 10) next.contactNumber = "Enter a 10-digit contact number.";
     if (!values.department) next.department = "Select a department.";
     if (!values.designation) next.designation = "Select a designation.";
     if (!values.joiningDate) next.joiningDate = "Select the joining date.";
@@ -186,7 +187,7 @@ export default function EmployeeFormModal({
           <Input label="Employee ID" required value={values.employeeId} onChange={(event) => setValue("employeeId", event.target.value)} error={errors.employeeId} placeholder="e.g. EMP-1211" hint="Must be unique across employee records." />
           <Input label="Full Name" required value={values.fullName} onChange={(event) => setValue("fullName", event.target.value)} error={errors.fullName} placeholder="e.g. Ananya Sharma" />
           <Input label="Email Address" required type="email" value={values.email} onChange={(event) => setValue("email", event.target.value)} error={errors.email} placeholder="name@company.com" />
-          <Input label="Contact Number" required type="tel" value={values.contactNumber} onChange={(event) => setValue("contactNumber", event.target.value)} error={errors.contactNumber} placeholder="+91 98765 43210" />
+          <Input label="Contact Number" required type="tel" inputMode="numeric" maxLength={10} value={values.contactNumber} onChange={(event) => setValue("contactNumber", event.target.value.replace(/\D/g, "").slice(0,10))} error={errors.contactNumber} placeholder="9876543210" />
         </div>
       ),
     },
@@ -228,7 +229,7 @@ export default function EmployeeFormModal({
         <div className="form-grid">
           <Input label="Previous Company" optional value={values.previousCompany} onChange={(event) => setValue("previousCompany", event.target.value)} placeholder="e.g. Acme Technologies" />
           <Input label="Previous Designation" optional value={values.previousDesignation} onChange={(event) => setValue("previousDesignation", event.target.value)} placeholder="e.g. Software Engineer" />
-          <Input label="Total Experience (years)" optional type="number" min={0} step="0.5" value={values.totalExperience} onChange={(event) => setValue("totalExperience", event.target.value)} error={errors.totalExperience} placeholder="e.g. 5" />
+          <Input label="Total Experience (years)" optional type="number" min={0} max={60} step="1" inputMode="numeric" pattern="[0-9]*" value={values.totalExperience} onKeyDown={(event) => { if (["e","E","+","-",".",","].includes(event.key)) event.preventDefault(); }} onChange={(event) => setValue("totalExperience", event.target.value.replace(/\D+/g, "").slice(0,2))} error={errors.totalExperience} placeholder="e.g. 5" />
           <div className="field field--full"><Textarea label="Job Responsibilities" value={values.jobResponsibilities} onChange={(event) => setValue("jobResponsibilities", event.target.value)} placeholder="Summarise key responsibilities and achievements." rows={4} /></div>
         </div>
       ),

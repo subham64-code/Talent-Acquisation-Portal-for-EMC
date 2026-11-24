@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarClock, CheckCircle2, Download, FileSearch, Mail, PauseCircle, Phone, PlayCircle, UserRound, XCircle } from "lucide-react";
+import { CalendarClock, Download, Mail, PauseCircle, Phone } from "lucide-react";
 import PageHeader from "../../../components/ref/PageHeader";
 import Button from "../../../components/ref/Button";
 import Modal from "../../../components/ref/Modal";
@@ -79,12 +79,28 @@ export default function HoldView() {
   };
 
   const actionButton = (item: any) => (
-    <div className="cell-actions">
-      <Link className="btn btn--ghost btn--icon" to={`/hr/submissions/${item.id}`} title="Open candidate profile" aria-label="Open candidate profile"><UserRound size={16} /></Link>
-      {item.resumeFileId && <button type="button" className="btn btn--ghost btn--icon" title="Preview CV" aria-label="Preview CV" onClick={() => void previewCv(item)} disabled={previewing}><FileSearch size={16} /></button>}
-      <button type="button" className="btn btn--ghost btn--icon" title="Select candidate" aria-label="Select candidate" onClick={() => void action(item, "SELECTED")} disabled={busyId === item.id}><CheckCircle2 size={16} /></button>
-      <button type="button" className="btn btn--ghost btn--icon" title="Resume candidate" aria-label="Resume candidate" onClick={() => void action(item, "UNDER_REVIEW")} disabled={busyId === item.id}><PlayCircle size={16} /></button>
-      <button type="button" className="btn btn--danger-ghost btn--icon" title="Reject candidate" aria-label="Reject candidate" onClick={() => void action(item, "REJECTED")} disabled={busyId === item.id}><XCircle size={16} /></button>
+    <div className="cell-actions" style={{ justifyContent: "center", width: "100%" }}>
+      <select
+        className="input"
+        style={{ minWidth: 190, padding: "6px 10px", fontSize: 13 }}
+        defaultValue=""
+        disabled={busyId === item.id}
+        onChange={(e) => {
+          const v = e.target.value;
+          e.target.value = "";
+          if (v === "profile") window.open(`/hr/submissions/${item.id}`, "_self");
+          else if (v === "cv") void previewCv(item);
+          else if (v === "SELECTED" || v === "UNDER_REVIEW" || v === "REJECTED") void action(item, v);
+        }}
+        aria-label={`Actions for ${item.candidate?.fullName || "candidate"}`}
+      >
+        <option value="" disabled>Select to:-</option>
+        <option value="profile">Open candidate profile</option>
+        {item.resumeFileId && <option value="cv">Preview CV</option>}
+        <option value="SELECTED">Select</option>
+        <option value="UNDER_REVIEW">Resume / Review</option>
+        <option value="REJECTED">Reject</option>
+      </select>
     </div>
   );
 
@@ -107,7 +123,7 @@ export default function HoldView() {
     { key: "applied", header: "Applied", render: (item) => <span className="cell-muted">{formatDate(item.appliedAt)}</span> },
     { key: "score", header: "AI Score", render: (item) => item.aiMatchScore != null ? <span className="cell-strong">{Math.round(item.aiMatchScore)}</span> : <span className="cell-muted">—</span> },
     { key: "status", header: "Status", render: (item) => <CandidateStatusBadge status={item.status} /> },
-    { key: "actions", header: "Actions", className: "text-right", render: actionButton },
+    { key: "actions", header: "Actions", className: "text-center", render: actionButton },
   ];
 
   return (

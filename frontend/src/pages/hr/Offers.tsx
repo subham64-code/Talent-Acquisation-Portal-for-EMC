@@ -289,19 +289,19 @@ export default function Offers() {
   };
 
   const columns: Column<any>[] = [
-    { key: "candidate", header: "Candidate", render: (o) => <div className="cell-user"><div className="avatar">{initials(o.application?.candidate?.fullName || "")}</div><div className="cell-user__text"><div className="cell-user__name">{o.application?.candidate?.fullName}</div><div className="cell-user__sub">{o.application?.candidate?.email}</div></div></div> },
-    { key: "position", header: "Position", render: (o) => <div><div>{o.application?.jobOpening?.title}</div><div className="cell-muted">{o.designation}</div></div> },
-    { key: "ctc", header: "CTC", render: (o) => o.ctc != null ? `₹ ${Number(o.ctc).toLocaleString()}` : "—" },
-    { key: "joining", header: "Joining", render: (o) => <span className="cell-muted">{formatDate(o.joiningDate)}</span> },
-    { key: "expiry", header: "Expiry", render: (o) => <div><span className="cell-muted">{formatDate(o.expiryDate)}</span>{["SENT", "VIEWED"].includes(o.status) && o.sentAt && <div className="cell-muted">{Math.min(7, Math.floor((Date.now() - new Date(o.sentAt).getTime()) / 86400000) + 1)} of 7 days to respond</div>}</div> },
-    { key: "status", header: "Status", render: (o) => { const meta = OFFER_META[o.status] ?? (o.status === "PENDING" ? OFFER_META.PENDING : { label: o.status, variant: "grey" as const }); return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
-    { key: "response", header: "Candidate response", render: (o) => o.responseRemarks ? <div className="offer-response" title={o.responseRemarks}><span>{o.responseRemarks}</span>{o.respondedAt && <small>{formatDate(o.respondedAt)}</small>}</div> : <span className="cell-muted">—</span> },
+    { key: "candidate", header: "Candidate", className: "text-center", render: (o) => <div className="cell-user"><div className="avatar">{initials(o.application?.candidate?.fullName || "")}</div><div className="cell-user__text"><div className="cell-user__name">{o.application?.candidate?.fullName}</div><div className="cell-user__sub">{o.application?.candidate?.email}</div></div></div> },
+    { key: "position", header: "Position", className: "text-center", render: (o) => <div><div>{o.application?.jobOpening?.title}</div><div className="cell-muted">{o.designation}</div></div> },
+    { key: "ctc", header: "CTC", className: "text-center", render: (o) => o.ctc != null ? `₹ ${Number(o.ctc).toLocaleString()}` : "—" },
+    { key: "joining", header: "Joining", className: "text-center", render: (o) => <span className="cell-muted">{formatDate(o.joiningDate)}</span> },
+    { key: "expiry", header: "Expiry", className: "text-center", render: (o) => <div><span className="cell-muted">{formatDate(o.expiryDate)}</span>{["SENT", "VIEWED"].includes(o.status) && o.sentAt && <div className="cell-muted">{Math.min(7, Math.floor((Date.now() - new Date(o.sentAt).getTime()) / 86400000) + 1)} of 7 days to respond</div>}</div> },
+    { key: "status", header: "Status", className: "text-center", render: (o) => { const meta = OFFER_META[o.status] ?? (o.status === "PENDING" ? OFFER_META.PENDING : { label: o.status, variant: "grey" as const }); return <Badge variant={meta.variant} dot>{meta.label}</Badge>; } },
+    { key: "response", header: "Candidate response", className: "col-compact text-center", render: (o) => o.responseRemarks ? <div className="offer-response" title={o.responseRemarks}><span>{o.responseRemarks}</span>{o.respondedAt && <small>{formatDate(o.respondedAt)}</small>}</div> : <span className="cell-muted">—</span> },
     {
       key: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-center",
       render: (o) => (
-        <div className="cell-actions">
+        <div className="cell-actions" style={{ justifyContent: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap", width: "100%" }}>
           <button type="button" className="btn btn--ghost btn--icon" title="Edit offer" aria-label="Edit offer" onClick={() => openEdit(o)}><Pencil size={16} /></button>
           <button type="button" className="btn btn--ghost btn--icon" title="Preview appointment letter" aria-label="Preview appointment letter" onClick={() => setLetterPreview(o)}><FileSearch size={16} /></button>
           {!o.pdfFileId && <button type="button" className="btn btn--outline btn--sm" title="Generate PDF" aria-label="Generate PDF" onClick={() => void generatePdf(o.id)} disabled={busy}>Generate PDF</button>}

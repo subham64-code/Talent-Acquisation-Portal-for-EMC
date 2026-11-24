@@ -214,52 +214,53 @@ export default function Reports() {
       {error && <div className="notice notice--error" role="alert"><div className="notice__body">{error}</div></div>}
 
       <section className="card reports-panel" aria-label="Report filters">
-        <div className="card__header"><div><div className="card__title">Generate a report</div><div className="card__subtitle">Pick one report below, choose filters and press Preview. The result is rendered from the live database.</div></div></div>
-        <div className="card__body reports-filter-grid">
-          <select className="select" value={type} onChange={(event) => setType(event.target.value)} aria-label="Report type">
-            <option value="">Choose a report…</option>
-            {types.map((item) => <option key={item} value={item}>{REPORT_META[item]?.title ?? item.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")}</option>)}
-          </select>
-          <input type="date" className="input" title="From date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From date" />
-          <input type="date" className="input" title="To date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To date" />
-          <select className="select" value={departmentId} onChange={(event) => setDepartmentId(event.target.value)} aria-label="Department">
-            <option value="">All departments</option>
-            {departments.map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}
-          </select>
-          <select className="select" value={jobOpeningId} onChange={(event) => setJobOpeningId(event.target.value)} aria-label="Job opening">
-            <option value="">All openings</option>
-            {openings.map((opening: any) => <option key={opening.id} value={opening.id}>{opening.title}</option>)}
-          </select>
-          <select className="select" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status">
-            {STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item ? item.replace(/_/g, " ") : "All statuses"}</option>)}
-          </select>
-          <div className="reports-filter-actions">
-            <button type="button" className="btn btn--primary" disabled={loading || !type} onClick={() => run(type)}>{loading ? "Generating…" : "Preview"}</button>
-            <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "csv")}><Download size={16} aria-hidden="true" /> CSV</button>
-            <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "excel")}><Download size={16} aria-hidden="true" /> Excel</button>
-            <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "pdf")}><Download size={16} aria-hidden="true" /> PDF</button>
+        <div className="card__header"><div><div className="card__title">Generate a report</div><div className="card__subtitle">Pick a report from the library, choose filters and press Preview.</div></div></div>
+        <div className="card__body">
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 8 }}>Report library</div>
+            <div className="reports-library">
+              {types.map((item) => {
+                const meta = REPORT_META[item] ?? { title: item.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "), description: "Live database report.", category: "Other", icon: FileText };
+                const Icon = meta.icon;
+                const active = type === item;
+                return (
+                  <button type="button" key={item} className={`report-library-card ${active ? "active" : ""}`} onClick={() => run(item, "json")} aria-pressed={active}>
+                    <span className="report-library-card__icon"><Icon size={22} aria-hidden="true" /></span>
+                    <span className="report-library-card__body">
+                      <span className="report-library-card__title">{meta.title}</span>
+                      <span className="report-library-card__description">{meta.description}</span>
+                    </span>
+                    <span className="report-library-card__category">{meta.category}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section className="card reports-panel">
-        <div className="card__header"><div><div className="card__title">Report library</div><div className="card__subtitle">Every report option HR can generate — click any card to preview it instantly.</div></div></div>
-        <div className="card__body reports-library">
-          {types.map((item) => {
-            const meta = REPORT_META[item] ?? { title: item.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "), description: "Live database report.", category: "Other", icon: FileText };
-            const Icon = meta.icon;
-            const active = type === item;
-            return (
-              <button type="button" key={item} className={`report-library-card ${active ? "active" : ""}`} onClick={() => run(item, "json")} aria-pressed={active}>
-                <span className="report-library-card__icon"><Icon size={22} aria-hidden="true" /></span>
-                <span className="report-library-card__body">
-                  <span className="report-library-card__title">{meta.title}</span>
-                  <span className="report-library-card__description">{meta.description}</span>
-                </span>
-                <span className="report-library-card__category">{meta.category}</span>
-              </button>
-            );
-          })}
+          <div className="reports-filter-grid">
+            <select className="select" value={type} onChange={(event) => setType(event.target.value)} aria-label="Report type">
+              <option value="">Choose a report…</option>
+              {types.map((item) => <option key={item} value={item}>{REPORT_META[item]?.title ?? item.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")}</option>)}
+            </select>
+            <input type="date" className="input" title="From date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From date" />
+            <input type="date" className="input" title="To date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To date" />
+            <select className="select" value={departmentId} onChange={(event) => setDepartmentId(event.target.value)} aria-label="Department">
+              <option value="">All departments</option>
+              {departments.map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}
+            </select>
+            <select className="select" value={jobOpeningId} onChange={(event) => setJobOpeningId(event.target.value)} aria-label="Job opening">
+              <option value="">All openings</option>
+              {openings.map((opening: any) => <option key={opening.id} value={opening.id}>{opening.title}</option>)}
+            </select>
+            <select className="select" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status">
+              {STATUS_OPTIONS.map((item) => <option key={item} value={item}>{item ? item.replace(/_/g, " ") : "All statuses"}</option>)}
+            </select>
+            <div className="reports-filter-actions">
+              <button type="button" className="btn btn--primary" disabled={loading || !type} onClick={() => run(type)}>{loading ? "Generating…" : "Preview"}</button>
+              <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "csv")}><Download size={16} aria-hidden="true" /> CSV</button>
+              <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "excel")}><Download size={16} aria-hidden="true" /> Excel</button>
+              <button type="button" className="btn btn--outline" disabled={loading || !type} onClick={() => run(type, "pdf")}><Download size={16} aria-hidden="true" /> PDF</button>
+            </div>
+          </div>
         </div>
       </section>
 

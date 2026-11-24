@@ -23,12 +23,9 @@ export default function EmployeeCard({ employee, onView, onEdit, onDelete }: {
 
       <div className="employee-card__meta">
         <span className="employee-card__meta-item"><Mail size={14} aria-hidden="true" />{employee.officialEmail}</span>
+        <span className="employee-card__meta-item">{employee.mobile ? String(employee.mobile).replace(/\D/g,"").slice(-10) || employee.mobile : "No contact"}</span>
         <span className="employee-card__meta-item"><CalendarDays size={14} aria-hidden="true" />Joined {formatDate(employee.joiningDate)}</span>
-        <span className="employee-card__meta-item">
-          <FileText size={14} aria-hidden="true" />
-          {employee.cvFileId ? "CV attached" : "No CV on file"}
-          <Badge variant={employee.cvFileId ? "green" : "grey"}>{employee.cvFileId ? "Ready" : "Missing"}</Badge>
-        </span>
+        <span className="employee-card__meta-item"><FileText size={14} aria-hidden="true" />{employee.cvFileId ? "CV attached" : "No CV on file"} <Badge variant={employee.cvFileId ? "green" : "grey"}>{employee.cvFileId ? "Ready" : "Missing"}</Badge></span>
       </div>
 
       <div className="employee-card__footer">

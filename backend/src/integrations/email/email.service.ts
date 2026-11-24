@@ -1,9 +1,18 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { Resend } from "resend";
 import { prisma } from "../../lib/prisma";
-import { smtpConfigured, env } from "../../config/env";
+import { resendConfigured, smtpConfigured, env } from "../../config/env";
 import { renderEmail } from "./templates";
 
 let transporter: Transporter | null | undefined;
+let resendClient: Resend | null | undefined;
+
+function getResend(): Resend | null {
+  if (resendClient === undefined) {
+    resendClient = resendConfigured ? new Resend(env.resendApiKey) : null;
+  }
+  return resendClient;
+}
 
 function getTransporter(): Transporter | null {
   if (transporter === undefined) {
@@ -13,7 +22,10 @@ function getTransporter(): Transporter | null {
       secure: env.smtpSecure,
       auth: env.smtpUser ? { user: env.smtpUser, pass: env.smtpPass } : undefined,
       tls: { rejectUnauthorized: env.smtpRejectUnauthorized },
-    }) : null;
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
+    } as any) : null;
   }
   return transporter;
 }
@@ -50,11 +62,39 @@ export async function sendEmail(input: SendEmailInput): Promise<SendResult> {
     log = undefined as any;
   }
 
+  const resend = getResend();
   const transporter = getTransporter();
   const maxAttempts = 3;
   let lastError: Error | undefined;
 
+  const sendViaResend = async (): Promise<SendResult | null> => {
+    if (!resend) return null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const sent = await resend.emails.send({
+          from: env.mailFrom || "no-reply@emc.example",
+          to: [input.to],
+          subject: input.subject ?? "(no subject)",
+          html: input.html,
+          text: input.text,
+          replyTo: env.mailReplyTo || undefined,
+          attachments: input.attachments?.map((a) => ({ filename: a.filename, content: a.content })),
+        } as any);
+        if ((sent as any)?.error) throw new Error((sent as any).error.message || "Resend send failed");
+        try { if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { status: "SENT", attempts: attempt, sentAt: new Date(), metadata: { ...(log.metadata as Record<string, unknown> | undefined), messageId: (sent as any)?.data?.id, provider: "resend" } } }); } catch {}
+        return { status: "SENT", message: (sent as any)?.data?.id };
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`[email:resend] attempt ${attempt} failed for ${input.to}`, lastError.message);
+        if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+    }
+    return null;
+  };
+
   if (!transporter || !smtpConfigured) {
+    const resendResult = await sendViaResend();
+    if (resendResult) return resendResult;
     const body = input.html || input.text || input.subject;
     console.log("[email:simulated]", input.to, input.subject, body ? "=> " + body.slice(0, 180) : "");
     try {
@@ -90,6 +130,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendResult> {
               metadata: {
                 ...(log.metadata as Record<string, unknown> | undefined),
                 messageId: sent.messageId,
+                provider: "smtp",
               },
             },
           });
@@ -98,12 +139,16 @@ export async function sendEmail(input: SendEmailInput): Promise<SendResult> {
       return { status: "SENT", message: sent.messageId };
     } catch (error) {
       lastError = error as Error;
-      console.error(`[email] attempt ${attempt} failed for ${input.to}`, lastError.message);
+      console.error(`[email:smtp] attempt ${attempt} failed for ${input.to}`, lastError.message);
+      try { if (log) await prisma.emailLog.update({ where: { id: log.id }, data: { attempts: attempt, error: lastError.message } }); } catch {}
       if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
   }
+
+  const resendFallback = await sendViaResend();
+  if (resendFallback) return resendFallback;
 
   try {
     if (log) {
@@ -140,5 +185,5 @@ export async function sendTemplateEmail(input: SendTemplateInput): Promise<SendR
 }
 
 export function emailSimulated(): boolean {
-  return !smtpConfigured || !getTransporter();
+  return !resendConfigured && (!smtpConfigured || !getTransporter());
 }

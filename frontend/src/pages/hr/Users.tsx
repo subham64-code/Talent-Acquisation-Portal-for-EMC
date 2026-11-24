@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Mail, ShieldCheck, UserPlus } from "lucide-react";
+import { Eye, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
 import { hrApi } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import PageHeading from "../../components/ref/PageHeading";
@@ -13,9 +13,9 @@ export default function Users() {
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
-  const [storage, setStorage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [detailUser, setDetailUser] = useState<any | null>(null);
   const [form, setForm] = useState<{ name: string; email: string; roleId: string; departmentIds: string[] }>({ name: "", email: "", roleId: "", departmentIds: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +23,6 @@ export default function Users() {
   const [setupLink, setSetupLink] = useState("");
 
   const canManage = (user?.permissions || []).includes("users.manage");
-  const canReset = (user?.permissions || []).includes("users.reset");
 
   const load = () => {
     hrApi
@@ -37,7 +36,6 @@ export default function Users() {
       hrApi.users({ page: 1, pageSize: 100 }).then((r: any) => setUsers(r.data.items ?? r.data)).catch(() => setUsers([])),
       hrApi.roles().then((r: any) => setRoles(r.data.roles ?? r.data)).catch(() => setRoles([])),
       hrApi.departmentDropdown().then((r: any) => setDepartments(r.data.items ?? r.data)).catch(() => setDepartments([])),
-      canReset ? hrApi.storageOverview().then((r: any) => setStorage(r.data)).catch(() => setStorage(null)) : Promise.resolve(),
     ]).finally(() => setLoading(false));
   }, []);
 
@@ -96,31 +94,7 @@ export default function Users() {
     return "Not enrolled";
   };
 
-  const resetTotp = async (item: any) => {
-    setError("");
-    try {
-      const result = await hrApi.resetTotp(item.id, window.location.origin);
-      setUsers(users.map((x) => (x.id === item.id ? { ...x, totpEnabled: false, totpEnrollmentPending: true, totpEnabledAt: null } : x)));
-      setSetupLink(result.data?.enrollmentLink || "");
-      if (result.data?.emailDelivered === false) {
-        setError("TOTP reset, but the email was not delivered. Copy the setup link below and send it to the user.");
-      } else {
-        setMessage(`TOTP reset for ${item.name}. A new single-use setup link was emailed to ${item.email}.`);
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not reset TOTP.");
-    }
-  };
 
-  const revokeSessions = async (item: any) => {
-    setError("");
-    try {
-      await hrApi.revokeAllSessions(item.id);
-      setMessage(`All active sessions for ${item.name} were revoked.`);
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Could not revoke sessions.");
-    }
-  };
 
   const initials = (name: string) =>
     name
@@ -133,8 +107,8 @@ export default function Users() {
   return (
     <div>
       <PageHeading
-        title="HR team & permissions"
-        description="Add HR users, then delegate only the access required for their SOP responsibilities."
+        title="HR Team"
+        description="View HR team members and registered team accounts."
         action={
           canManage ? (
             <Button icon={UserPlus} onClick={() => setShowCreate(true)}>
@@ -147,8 +121,8 @@ export default function Users() {
       <div className="callout callout--info">
         <ShieldCheck size={18} />
         <div>
-          <strong>Least-privilege control</strong>
-          <span>New users are invited first, then role and department access is assigned before they sign in.</span>
+          <strong>Team access</strong>
+          <span>Manage HR team members and their account access.</span>
         </div>
       </div>
 
@@ -175,157 +149,66 @@ export default function Users() {
         </div>
       )}
 
-      <div className="hr-team-layout">
-        <section className="card">
-          <div className="card__header">
-            <div>
-              <h2 className="card__title">Team register</h2>
-              <p className="card__subtitle">{users.length} delegated HR users</p>
-            </div>
-            <Mail size={20} className="text-secondary" />
+      <section className="card">
+        <div className="card__header">
+          <div>
+            <h2 className="card__title">Registered team</h2>
+            <p className="card__subtitle">{users.length} team members</p>
           </div>
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>HR user</th>
-                  <th>Role</th>
-                  <th>Departments</th>
-                  <th>Status</th>
-                  <th>Authenticator</th>
+        </div>
+        <div className="table-wrapper">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th style={{ textAlign: "right" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((item: any) => (
+                <tr key={item.id}>
+                  <td>
+                    <div className="flex items-center gap-2.5">
+                      <span className="avatar avatar--sm">{initials(item.name || item.email || "HR")}</span>
+                      <div>
+                        <strong>{item.name}</strong>
+                        <span className="table-muted">{item.email}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      {(item.roles ?? []).map((role: any) => (
+                        <span key={role.role?.id || role.role?.key} className="badge badge--grey">
+                          {role.role?.name || role.role?.key}
+                        </span>
+                      ))}
+                      {(item.roles ?? []).length === 0 && <span className="table-muted">-</span>}
+                    </div>
+                  </td>
+                  <td><StatusPill status={item.isActive ? "ACTIVE" : "INACTIVE"} /></td>
+                  <td style={{ textAlign: "right" }}>
+                    <button type="button" className="btn btn--outline btn--sm" onClick={() => setDetailUser(item)}><Eye size={14} /> View</button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {users.map((item: any) => (
-                  <tr key={item.id}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <span className="avatar avatar--sm">{initials(item.name || item.email || "HR")}</span>
-                        <div>
-                          <strong>{item.name}</strong>
-                          <span className="table-muted">{item.email}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {(item.roles ?? []).map((role: any) => (
-                          <span key={role.role?.id || role.role?.key} className="badge badge--grey">
-                            {role.role?.name || role.role?.key}
-                          </span>
-                        ))}
-                        {(item.roles ?? []).length === 0 && <span className="table-muted">—</span>}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="table-muted">
-                        {(item.departments ?? []).map((department: any) => department.name).join(", ") || "All"}
-                      </span>
-                    </td>
-                    <td>
-                      <StatusPill status={item.isActive ? "ACTIVE" : "INACTIVE"} />
-                    </td>
-                    <td>
-                      <span className="badge badge--grey">{totpLabel(item)}</span>
-                    </td>
-                  </tr>
-                ))}
-                {!loading && users.length === 0 && (
-                  <tr>
-                    <td colSpan={5}>
-                      <div className="empty-state">No HR users yet.</div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card__header">
-            <div>
-              <h2 className="card__title">Account controls</h2>
-              <p className="card__subtitle">Manage activation and credentials for each HR user.</p>
-            </div>
-          </div>
-          <div className="flex flex-col gap-1 p-2">
-            {users.map((item: any) => (
-              <div key={item.id} className="permission-row">
-                <div>
-                  <strong>{item.name}</strong>
-                   <span>
-                     {item.isActive ? "Active" : "Inactive"}
-                     {item.lastLoginAt ? ` · last login ${new Date(item.lastLoginAt).toLocaleDateString()}` : " · never signed in"}
-                     {` · TOTP ${totpLabel(item)}`}
-                   </span>
-                 </div>
-                 <div className="table-actions">
-                   {canManage && (
-                     <button type="button" className="icon-action" onClick={() => toggleActive(item)}>
-                       {item.isActive ? "Deactivate" : "Activate"}
-                     </button>
-                   )}
-                   {canReset && (
-                     <button type="button" className="icon-action" onClick={() => resetTotp(item)}>
-                       {item.totpEnabled ? "Reset TOTP" : "Send setup link"}
-                     </button>
-                   )}
-                   {canReset && (
-                     <button type="button" className="icon-action" onClick={() => revokeSessions(item)}>
-                       Revoke sessions
-                     </button>
-                   )}
-                 </div>
-              </div>
-            ))}
-            {!canManage && (
-              <div className="empty-state">Your role cannot modify HR accounts.</div>
-            )}
-          </div>
-        </section>
-      </div>
-
-      {storage && (
-        <section className="card mt-6">
-          <div className="card__header">
-            <div>
-              <h2 className="card__title">Cloud storage buckets</h2>
-              <p className="card__subtitle">
-                {storage.totals?.files ?? 0} files · {((storage.totals?.bytes ?? 0) / 1048576).toFixed(1)} MB ·
-                provider: {storage.provider}
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 px-5 pb-5">
-            {(storage.buckets ?? []).map((bucket: any) => (
-              <div key={bucket.bucket} className="rounded-lg border border-[#171717]/10 px-3 py-2">
-                <p className="text-xs font-semibold ink-body truncate">{bucket.bucket}</p>
-                <p className="text-[11px] ink-soft">
-                  {bucket.files} files · {(bucket.bytes / 1048576).toFixed(1)} MB
-                </p>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+              ))}
+              {!loading && users.length === 0 && (
+                <tr><td colSpan={4}><div className="empty-state">No team members yet.</div></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <Modal
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Add HR user"
-        subtitle="Creates the account and emails a single-use authenticator setup link. HR users sign in with their email and a TOTP code — no password."
+        subtitle="Creates the account and emails a single-use authenticator setup link."
         size="lg"
-         footer={
-          <>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>
-              Cancel
-            </Button>
-            <Button icon={Mail} type="submit" form="add-hr-form" loading={saving}>
-              Create & send invitation
-            </Button>
-          </>
-        }
+        footer={<><Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button icon={Mail} type="submit" form="add-hr-form" loading={saving}>Create &amp; send invitation</Button></>}
       >
         <form id="add-hr-form" onSubmit={submit} className="form-grid">
           <Input
@@ -403,6 +286,24 @@ export default function Users() {
             <p className="text-[11px] ink-soft mt-1.5">{form.departmentIds.length === 0 ? "Access to all departments" : `Access limited to ${form.departmentIds.length} department${form.departmentIds.length === 1 ? "" : "s"}`}</p>
           </div>
         </form>
+      </Modal>
+      <Modal open={!!detailUser} onClose={() => setDetailUser(null)} title={detailUser?.name || "Team member"} subtitle={detailUser?.email || ""} size="md">
+        {detailUser && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div><p className="text-xs ink-soft">Status</p><StatusPill status={detailUser.isActive ? "ACTIVE" : "INACTIVE"} /></div>
+              <div><p className="text-xs ink-soft">Authenticator</p><p className="font-medium ink-body">{totpLabel(detailUser)}</p></div>
+              <div><p className="text-xs ink-soft">Last login</p><p className="font-medium ink-body">{detailUser.lastLoginAt ? new Date(detailUser.lastLoginAt).toLocaleString() : "Never signed in"}</p></div>
+              <div><p className="text-xs ink-soft">Departments</p><p className="font-medium ink-body">{(detailUser.departments ?? []).map((d:any)=>d.name).join(", ") || "All"}</p></div>
+            </div>
+            <div><p className="text-xs ink-soft mb-1">Roles</p><div className="flex flex-wrap gap-1">{(detailUser.roles ?? []).map((r:any)=><span key={r.role?.id||r.role?.key} className="badge badge--grey">{r.role?.name||r.role?.key}</span>)}</div></div>
+            {canManage && (
+              <div className="flex gap-2 pt-2 border-t" style={{borderColor:"var(--border)"}}>
+                <button type="button" className="btn btn--outline btn--sm" onClick={() => { toggleActive(detailUser); setDetailUser({...detailUser, isActive: !detailUser.isActive}); }}>{detailUser.isActive ? "Deactivate" : "Activate"}</button>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

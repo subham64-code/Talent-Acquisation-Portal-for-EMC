@@ -185,12 +185,8 @@ const applySchema = z.object({
   job_title: z.string().optional().nullable(),
   full_name: z.string().min(2).max(120),
   email: z.string().email().transform((v) => v.trim().toLowerCase()),
-  phone: z
-    .string()
-    .min(1, "Phone number is required.")
-    .transform((v) => v.replace(/[\s()-]/g, ""))
-    .refine((v) => MOBILE_REGEX.test(v), "Phone number must be exactly 10 digits and start with 6-9."),
-  experience: z.string().min(1, "Experience is required.").max(120),
+  phone: z.string().trim().transform((v) => v.replace(/\D/g, "")).refine((v) => /^\d{10}$/.test(v), "Enter a valid 10-digit phone number."),
+  experience: z.string().trim().regex(/^\d{1,2}$/, "Enter a valid experience in years (0-60).").refine((v)=>Number(v)<=60,"Enter a valid experience in years (0-60)."),
   cover_letter: z.string().optional().nullable(),
 });
 
@@ -267,7 +263,7 @@ router.post(
     const candidateProfile = {
       fullName: data.full_name,
       mobile: data.phone,
-      totalExperience: asNumber(data.experience),
+      totalExperience: Number(data.experience),
       additionalInfo: JSON.stringify(raw),
     };
 

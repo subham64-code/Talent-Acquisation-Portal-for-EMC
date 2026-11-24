@@ -283,12 +283,12 @@ export default function InvitationsView() {
     {
       key: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-center",
       render: (inv) => {
         const action = actionFor(inv);
         const busy = busyId === inv.id;
         return (
-          <div className="cell-actions">
+          <div className="cell-actions" style={{ justifyContent: "center", gap: 8, width: "100%", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
             <Button variant="ghost" size="sm" icon={Eye} onClick={() => setViewing(inv)} type="button">Details</Button>
             <button type="button" className="btn btn--ghost btn--icon" onClick={() => copyLink(inv)} disabled={busy} title="Copy a fresh invitation link" aria-label={`Copy invitation link for ${inv.email}`}>
               {busy ? <RefreshCw size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
@@ -349,7 +349,7 @@ export default function InvitationsView() {
         <span className="filters-summary">{isLoading ? "Loading invitations…" : `${filtered.length} invitation${filtered.length === 1 ? "" : "s"}`}</span>
       </DatabankToolbar>
 
-      <DataTable
+      <div className="table-wrapper" style={{ overflowX: "auto" }}><DataTable
         columns={columns}
         rows={filtered}
         rowKey={(row) => row.id}
@@ -358,7 +358,7 @@ export default function InvitationsView() {
           <div className="empty-state"><span className="empty-state__icon"><Send size={24} aria-hidden="true" /></span><p className="empty-state__title">No invitations match this view</p><p className="empty-state__text">Send a new invitation or adjust the completion and date filters.</p></div>
         }
         footer={<><span>Showing <strong>{filtered.length}</strong> invitation{filtered.length === 1 ? "" : "s"}</span><span className="cell-muted">Invitation emails are logged in the audit trail and email log</span></>}
-      />
+      /></div>
 
       <InvitationProgressModal invitation={progress} onClose={() => setProgress(null)} />
 

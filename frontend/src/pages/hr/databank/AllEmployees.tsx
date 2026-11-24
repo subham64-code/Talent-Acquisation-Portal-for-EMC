@@ -1,5 +1,4 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Eye, UsersRound } from "lucide-react";
 import Badge from "../../../components/ref/Badge";
 import PageHeader from "../../../components/ref/PageHeader";
@@ -7,17 +6,18 @@ import DataTable, { type Column } from "../../../components/DataTable";
 import DatabankToolbar from "./DatabankToolbar";
 import ViewToggle from "./ViewToggle";
 import EmployeeCard from "./EmployeeCard";
+import EmployeeQuickViewModal from "./EmployeeQuickViewModal";
 import { EmptyStateBlock, formatDate, initials } from "./shared";
 import { hrApi } from "../../../lib/api";
 import { useApiQuery } from "../../../hooks/useApiQuery";
 import { useDebounced } from "../../../hooks/useDebounced";
 
 export default function AllEmployeesView({ departments }: { departments: any[] }) {
-  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [recordType, setRecordType] = useState("");
   const [department, setDepartment] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
   const debouncedSearch = useDebounced(search);
@@ -53,7 +53,7 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
     setDepartment("");
   };
 
-  const handleView = (row: any) => navigate(`/hr/employees/${row.id}`);
+  const handleView = (row: any) => setViewingId(row.id);
 
   const columns: Column<any>[] = [
     {
@@ -82,9 +82,9 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
     {
       key: "actions",
       header: "Actions",
-      className: "text-right",
+      className: "text-center",
       render: (row) => (
-        <div className="cell-actions">
+        <div className="cell-actions" style={{ justifyContent: "center", width: "100%" }}>
           <button type="button" className="btn btn--ghost btn--icon" onClick={() => handleView(row)} title={row.recordType === "former" ? "View former record" : "View profile"} aria-label={`View ${row.fullName}`}><Eye size={16} /></button>
         </div>
       ),
@@ -134,6 +134,7 @@ export default function AllEmployeesView({ departments }: { departments: any[] }
         </div>
       )}
 
+      <EmployeeQuickViewModal employeeId={viewingId} onClose={() => setViewingId(null)} />
     </div>
   );
 }
