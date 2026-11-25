@@ -1,5 +1,39 @@
 const HR_API = 'https://talent-acquisation-portal-for-emc-production.up.railway.app/api/v1';
 
+const firstValue = (form, keys) => {
+  for (const key of keys) {
+    const value = form.get(key);
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+};
+
+const normalizePhone = (value) => {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return digits;
+};
+
+const normalizeExperience = (value) => value.match(/\d+/)?.[0] ?? value;
+
+const normalizeApplyForm = async (request) => {
+  const source = await request.formData();
+  const form = new FormData();
+  form.set('job_id', firstValue(source, ['job_id', 'openingId', 'jobOpeningId', 'jobId']));
+  form.set('job_title', firstValue(source, ['job_title', 'jobTitle', 'jobCode', 'title']));
+  form.set('full_name', firstValue(source, ['full_name', 'fullName', 'name']));
+  form.set('email', firstValue(source, ['email']));
+  form.set('phone', normalizePhone(firstValue(source, ['phone'])));
+  form.set('experience', normalizeExperience(firstValue(source, ['experience'])));
+  form.set('cover_letter', firstValue(source, ['cover_letter', 'coverLetter']));
+  const cv = source.get('cv') ?? source.get('resume');
+  if (cv && typeof cv === 'object' && typeof cv.arrayBuffer === 'function') {
+    form.set('cv', cv, cv.name || 'cv.pdf');
+  }
+  return new Request(request.url, { method: 'POST', body: form });
+};
+
 const safeRequestHeaders = (headers) => {
   const out = new Headers();
   headers.forEach((value, key) => {
@@ -49,7 +83,10 @@ export async function onRequest(context) {
 
   if (parts[0] === 'career') {
     const rest = parts.slice(1);
-    if (rest[0] === 'apply') rest[0] = 'applications';
+    if (rest[0] === 'apply') {
+      const normalized = await normalizeApplyForm(request);
+      return proxy(`${HR_API}/career/applications`, normalized);
+    }
     return proxy(`${HR_API}/career/${rest.join('/')}${url.search}`, request);
   }
 
