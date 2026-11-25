@@ -1,7 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { Resend } from "resend";
 import { prisma } from "../../lib/prisma";
-import { resendConfigured, smtpConfigured, env } from "../../config/env";
+import { brevoConfigured, resendConfigured, smtpConfigured, env } from "../../config/env";
 import { renderEmail } from "./templates";
 
 let transporter: Transporter | null | undefined;
@@ -29,6 +29,11 @@ function getTransporter(): Transporter | null {
   }
   return transporter;
 }
+
+const brevoSender = () => ({
+  name: env.brevoSenderName || "EMC Talent Acquisition",
+  email: env.brevoSenderEmail,
+});
 
 interface SendEmailInput {
   to: string;
@@ -67,6 +72,54 @@ export async function sendEmail(input: SendEmailInput): Promise<SendResult> {
   const maxAttempts = 3;
   let lastError: Error | undefined;
 
+  const sendViaBrevo = async (): Promise<SendResult | null> => {
+    if (!brevoConfigured) return null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": env.brevoApiKey,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            sender: brevoSender(),
+            to: [{ email: input.to }],
+            subject: input.subject ?? "(no subject)",
+            htmlContent: input.html || `<p>${input.text ?? input.subject ?? ""}</p>`,
+            textContent: input.text,
+            replyTo: env.mailReplyTo ? { email: env.mailReplyTo } : undefined,
+            attachments: input.attachments?.map((a) => ({ name: a.filename, content: a.content.toString("base64") })),
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`Brevo ${response.status}: ${(await response.text()).slice(0, 300)}`);
+        }
+        const payload = (await response.json().catch(() => null)) as { messageId?: string } | null;
+        try {
+          if (log) {
+            await prisma.emailLog.update({
+              where: { id: log.id },
+              data: {
+                status: "SENT",
+                attempts: attempt,
+                sentAt: new Date(),
+                metadata: { ...(log.metadata as Record<string, unknown> | undefined), messageId: payload?.messageId, provider: "brevo" },
+              },
+            });
+          }
+        } catch {}
+        return { status: "SENT", message: payload?.messageId ?? "brevo" };
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`[email:brevo] attempt ${attempt} failed for ${input.to}`, lastError.message);
+        if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+    }
+    return null;
+  };
+
   const sendViaResend = async (): Promise<SendResult | null> => {
     if (!resend) return null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -91,6 +144,9 @@ export async function sendEmail(input: SendEmailInput): Promise<SendResult> {
     }
     return null;
   };
+
+  const brevoResult = await sendViaBrevo();
+  if (brevoResult) return brevoResult;
 
   if (!transporter || !smtpConfigured) {
     const resendResult = await sendViaResend();
@@ -185,5 +241,5 @@ export async function sendTemplateEmail(input: SendTemplateInput): Promise<SendR
 }
 
 export function emailSimulated(): boolean {
-  return !resendConfigured && (!smtpConfigured || !getTransporter());
+  return !brevoConfigured && !resendConfigured && (!smtpConfigured || !getTransporter());
 }

@@ -117,6 +117,9 @@ export const env = {
   smtpUser: str("SMTP_USER", ""),
   smtpPass: str("SMTP_PASS", ""),
   resendApiKey: str("RESEND_API_KEY", ""),
+  brevoApiKey: str("BREVO_API_KEY", ""),
+  brevoSenderEmail: str("BREVO_SENDER_EMAIL", ""),
+  brevoSenderName: str("BREVO_SENDER_NAME", "EMC Talent Acquisition"),
   mailFrom: str("MAIL_FROM", "EMC Talent Acquisition <no-reply@emc.example>"),
   mailReplyTo: str("MAIL_REPLY_TO", "hr@emc.example"),
 
@@ -150,6 +153,7 @@ export const env = {
 
 export const smtpConfigured = Boolean(env.smtpHost && env.smtpUser && env.smtpPass);
 export const resendConfigured = Boolean(env.resendApiKey);
+export const brevoConfigured = Boolean(env.brevoApiKey && env.brevoSenderEmail);
 
 if (isProd) {
   if (!env.jwtSecret || env.jwtSecret.includes("change-me")) {

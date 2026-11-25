@@ -355,7 +355,7 @@ router.post(
       include: { candidate: true, jobOpening: { include: { department: true } } },
     });
 
-    void sendTemplateEmail({
+    const emailResult = await sendTemplateEmail({
       to: candidate.email,
       templateKey: "application_confirmation",
       data: {
@@ -365,6 +365,9 @@ router.post(
       },
       metadata: { applicationId: application.id },
     });
+    if (emailResult.status !== "SENT") {
+      console.error("[apply] confirmation email not sent", application.applicationCode, candidate.email, emailResult.status, emailResult.message);
+    }
     await notifyHrTeam({ type: "application.new", title: "New application", body: `${candidate.fullName} applied for ${job.title}.`, entityType: "Application", entityId: application.id });
     await cache.applicationsChanged();
     await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: null, actorEmail: candidate.email, metadata: { jobOpeningId: data.job_id, actorType: "CANDIDATE", candidateId } });
@@ -374,6 +377,7 @@ router.post(
       // without digging into the nested application object.
       reference: application.applicationCode,
       applicationId: application.id,
+      emailStatus: emailResult.status,
       application: {
         id: application.id,
         applicationCode: application.applicationCode,
