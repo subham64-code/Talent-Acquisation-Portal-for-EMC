@@ -180,25 +180,81 @@ const MOBILE_REGEX = /^[6-9]\d{9}$/;
 
 // Exactly the inputs of the original EMC careers apply form, plus one CV file.
 // No extra candidate fields are added or renamed anywhere in the pipeline.
+// The live EMC website submits camelCase aliases (openingId/fullName/coverLetter),
+// phones like "+91 98765 43210" and experience like "3 years" — those are
+// normalized below so both the original form and the live site work unchanged.
 const applySchema = z.object({
   job_id: z.string().min(1),
   job_title: z.string().optional().nullable(),
   full_name: z.string().min(2).max(120),
   email: z.string().email().transform((v) => v.trim().toLowerCase()),
-  phone: z.string().trim().transform((v) => v.replace(/\D/g, "")).refine((v) => /^\d{10}$/.test(v), "Enter a valid 10-digit phone number."),
-  experience: z.string().trim().regex(/^\d{1,2}$/, "Enter a valid experience in years (0-60).").refine((v)=>Number(v)<=60,"Enter a valid experience in years (0-60)."),
+  phone: z
+    .string()
+    .trim()
+    .transform((v) => {
+      let digits = v.replace(/\D/g, "");
+      if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+      else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+      return digits;
+    })
+    .refine((v) => /^\d{10}$/.test(v), "Enter a valid 10-digit phone number."),
+  experience: z
+    .string()
+    .trim()
+    .transform((v) => v.match(/\d+/)?.[0] ?? v)
+    .refine((v) => /^\d{1,2}$/.test(v), "Enter a valid experience in years (0-60).")
+    .refine((v) => Number(v) <= 60, "Enter a valid experience in years (0-60)."),
   cover_letter: z.string().optional().nullable(),
 });
 
 const EMC_FORM_FIELDS = ["job_id", "job_title", "full_name", "email", "phone", "experience", "cover_letter"] as const;
 
-function emcFormData(req: express.Request): Record<string, string> {
+/** Map the live EMC website's field names onto the canonical apply schema keys. */
+function normalizeApplyBody(req: express.Request): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...(req.body || {}) };
+  const alias = (target: string, ...sources: string[]) => {
+    const current = body[target];
+    if (current !== undefined && current !== null && current !== "") return;
+    for (const source of sources) {
+      const value = body[source];
+      if (value !== undefined && value !== null && value !== "") {
+        body[target] = value;
+        return;
+      }
+    }
+  };
+  alias("job_id", "openingId", "jobOpeningId", "jobId");
+  alias("full_name", "fullName", "name");
+  alias("cover_letter", "coverLetter");
+  alias("job_title", "jobTitle", "title");
+  return body;
+}
+
+function emcFormData(body: Record<string, unknown>): Record<string, string> {
   const raw: Record<string, string> = {};
   for (const field of EMC_FORM_FIELDS) {
-    const value = req.body?.[field];
+    const value = body?.[field];
     if (typeof value === "string") raw[field] = value;
   }
   return raw;
+}
+
+/**
+ * Accept the CV under either canonical field name ("cv") or the live EMC
+ * website's field name ("resume") so both callers keep working.
+ */
+function acceptCvField(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const handle = cvUpload.fields([
+    { name: "cv", maxCount: 1 },
+    { name: "resume", maxCount: 1 },
+  ]);
+  handle(req, res, (err: unknown) => {
+    if (err) return next(err);
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const file = files?.cv?.[0] ?? files?.resume?.[0];
+    if (file) req.file = file;
+    return next();
+  });
 }
 
 function asNumber(value: unknown): number | null {
@@ -239,9 +295,10 @@ async function nextApplicationCode(jobCode: string): Promise<string> {
 router.post(
   "/career/applications",
   applicationRateLimiter,
-  cvUpload.single("cv"),
+  acceptCvField,
   asyncHandler(async (req, res) => {
-    const parsed = applySchema.safeParse(req.body);
+    const body = normalizeApplyBody(req);
+    const parsed = applySchema.safeParse(body);
     if (!parsed.success) {
       const flat = parsed.error.flatten().fieldErrors as Record<string, string[] | undefined>;
       const firstField = Object.keys(flat)[0];
@@ -249,7 +306,7 @@ router.post(
       throw ApiError.badRequest(firstMessage || "Please check the highlighted fields and try again.", parsed.error.flatten());
     }
     const data = parsed.data;
-    const raw = emcFormData(req);
+    const raw = emcFormData(body);
     if (!req.file) throw ApiError.badRequest("Please attach your CV (PDF, DOC or DOCX, maximum 10 MB).");
     const job = await prisma.jobOpening.findUnique({ where: { id: data.job_id, status: "PUBLISHED" } });
     if (!job) throw ApiError.notFound("Opening not found or not accepting applications.");
@@ -313,6 +370,10 @@ router.post(
     await logAudit(req, { action: "APPLICATION_CREATE", entityType: "Application", entityId: application.id, actorId: null, actorEmail: candidate.email, metadata: { jobOpeningId: data.job_id, actorType: "CANDIDATE", candidateId } });
 
     return created(res, {
+      // Flat convenience fields so simple clients can read the reference
+      // without digging into the nested application object.
+      reference: application.applicationCode,
+      applicationId: application.id,
       application: {
         id: application.id,
         applicationCode: application.applicationCode,
