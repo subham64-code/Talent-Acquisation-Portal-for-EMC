@@ -64,7 +64,32 @@ const safeResponseHeaders = (headers) => {
   return withCors(out);
 };
 
-const proxy = async (target, request) => {
+const normalizeApplyResponse = (response) => {
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) return response;
+  const clone = response.clone();
+  return response.json().then((payload) => {
+    const data = payload && typeof payload === 'object'
+      ? (payload.data && typeof payload.data === 'object' ? payload.data : payload)
+      : null;
+    const app = data && typeof data.application === 'object' && data.application ? data.application : null;
+    if (data && app) {
+      if (!data.reference && app.applicationCode) data.reference = app.applicationCode;
+      if (!data.applicationId && (app.id || app.applicationId)) data.applicationId = app.id || app.applicationId;
+    }
+    return new Response(JSON.stringify(payload), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: safeResponseHeaders(response.headers),
+    });
+  }).catch(() => new Response(clone.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: safeResponseHeaders(response.headers),
+  }));
+};
+
+const proxy = async (target, request, transform) => {
   const init = {
     method: request.method,
     headers: safeRequestHeaders(request.headers),
@@ -74,6 +99,7 @@ const proxy = async (target, request) => {
   }
   try {
     const upstream = await fetch(target, init);
+    if (transform) return transform(upstream);
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
@@ -99,7 +125,7 @@ export async function onRequest(context) {
     const rest = parts.slice(1);
     if (rest[0] === 'apply') {
       const normalized = await normalizeApplyForm(request);
-      return proxy(`${HR_API}/career/applications`, normalized);
+      return proxy(`${HR_API}/career/applications`, normalized, normalizeApplyResponse);
     }
     return proxy(`${HR_API}/career/${rest.join('/')}${url.search}`, request);
   }

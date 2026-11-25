@@ -269,9 +269,12 @@ function showFormMsg(el, text, ok) {
 
 function extractApplicationId(json) {
   if (!json) return '';
+  const data = typeof json.data === 'object' && json.data ? json.data : null;
+  const app = data && typeof data.application === 'object' && data.application ? data.application : null;
   const candidates = [
     json.applicationId, json.application_id, json.id, json.reference, json.ref, json.refId, json.ref_id,
-    json.data && (json.data.applicationId || json.data.application_id || json.data.id || json.data.reference || json.data.ref || json.data.refId),
+    data && (data.applicationId || data.application_id || data.id || data.reference || data.ref || data.refId),
+    app && (app.applicationCode || app.application_id || app.reference || app.id || app.ref),
     json.result && (json.result.applicationId || json.result.id || json.result.reference)
   ];
   for (const c of candidates) {
@@ -315,9 +318,13 @@ function submitApplication(form, job) {
       form.reset();
       btn.textContent = 'Submitted ✓';
       const appId = extractApplicationId(json);
+      const emailStatus = json && json.data ? json.data.emailStatus : '';
+      const emailLine = emailStatus === 'SENT'
+        ? ' A confirmation email has been sent to your email address.'
+        : ' A confirmation email is being sent to your email address.';
       const successText = appId
-        ? 'Application submitted successfully! Your application ID: ' + appId + '. EMC HR team will get in touch soon.'
-        : 'Application submitted successfully! EMC HR team will get in touch soon.';
+        ? 'Application submitted successfully! Your application ID: ' + appId + '.' + emailLine + ' EMC HR team will get in touch soon.'
+        : 'Application submitted successfully!' + emailLine + ' EMC HR team will get in touch soon.';
       showFormMsg(msg, successText, true);
       setTimeout(() => window.emcModal.close(), 3000);
     })
