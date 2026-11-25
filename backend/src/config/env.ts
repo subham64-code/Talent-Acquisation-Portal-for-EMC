@@ -33,6 +33,21 @@ function bool(key: string, fallback = false): boolean {
 const nodeEnv = str("NODE_ENV", "development");
 const isProd = nodeEnv === "production";
 
+// Deployed origins that must always be allowed in production, in addition to
+// anything set in CORS_ORIGINS. This keeps the Cloudflare-hosted portal and
+// the EMC website able to call the API without extra dashboard setup.
+const DEPLOYED_CORS_ORIGINS = [
+  "https://emc-talent-portal-bbd.pages.dev",
+  "https://emc-new-website.emc-talent-portal-bbd.pages.dev",
+  "https://emc-hr-frontend.pages.dev",
+  "https://www.ecometrix.co.in",
+  "https://ecometrix.co.in",
+];
+const configuredCorsOrigins = str("CORS_ORIGINS", "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const aiWeights = {
   skills: num("AI_WEIGHT_SKILLS", 35),
   experience: num("AI_WEIGHT_EXPERIENCE", 25),
@@ -54,10 +69,11 @@ export const env = {
   trackApplicationUrl: str("TRACK_APPLICATION_URL", "http://localhost:5000/track-application.html"),
   apiUrl: str("API_URL", "http://localhost:4000"),
   publicApiUrl: str("PUBLIC_API_URL", "http://localhost:4000"),
-  corsOrigins: str("CORS_ORIGINS", "http://localhost:5173,http://localhost:5000")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: isProd
+    ? Array.from(new Set([...DEPLOYED_CORS_ORIGINS, ...configuredCorsOrigins]))
+    : configuredCorsOrigins.length
+      ? configuredCorsOrigins
+      : ["http://localhost:5173", "http://localhost:5000"],
   defaultTimezone: str("DEFAULT_TIMEZONE", "Asia/Kolkata"),
 
   databaseUrl: str("DATABASE_URL", ""),
