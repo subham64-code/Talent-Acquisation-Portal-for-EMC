@@ -1,3 +1,6 @@
+var EMC_API_BASE = window.EMC_API_BASE || (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' ? 'https://emc-website-7v6.pages.dev' : '');
+window.EMC_API_BASE = EMC_API_BASE;
+
 const INSIGHTS_DATA = [
   {
     id: 1,
@@ -102,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const email = newsletterForm.querySelector('input[type="email"]').value;
       
-      fetch('/api/newsletter/subscribe', {
+      fetch(EMC_API_BASE + '/api/newsletter/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })

@@ -3,7 +3,10 @@
   if (window.__emcChatbotLoaded) return;
   window.__emcChatbotLoaded = true;
 
-  var API = '/api';
+  var EMC_API_BASE = window.EMC_API_BASE || (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' ? 'https://emc-website-7v6.pages.dev' : '');
+  window.EMC_API_BASE = EMC_API_BASE;
+
+  var API = EMC_API_BASE + '/api';
   var MASCOT = 'https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/images/mascot.webp';
   var QUICK_START = ['Company Info', 'Our Services', 'Apply for Job / Upload CV', 'Schedule Visit / Meeting'];
 

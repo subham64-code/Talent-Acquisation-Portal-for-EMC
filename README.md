@@ -76,3 +76,14 @@ Set `DATABASE_URL` in your `.env` file:
 DATABASE_URL=postgresql://username:password@ep-sample-123456.us-east-2.aws.neon.tech/emcdb?sslmode=require
 ```
 Then run `python backend/init_db.py` to seed NeonDB.
+
+---
+
+## Deployed + local setup
+
+- Deployed website: `https://emc-website-7v6.pages.dev` (alias: `https://emc-website.emc-website-7v6.pages.dev`).
+- Local Live Server: `http://127.0.0.1:5500/EMC%20New%20Website/EMC/frontend/about.html`. All pages use the same files, CSS, JS and images as the deployed site. When opened locally, API calls are sent to the deployed Pages API proxy, so UI, UX and functionality match the deployed site.
+- Credentials and links: copy `.env.example` to `.env` and fill in only the secrets you have. The deployed URLs and the CORS origin list are already filled in.
+- HR backend CORS: in the Railway HR service, set `CORS_ORIGINS` to the value from `.env.example`. Do not add `localhost` there; local Live Server is handled by the Pages proxy.
+- Flask-only routes: set `FLASK_API_ORIGIN` in Cloudflare Pages (`emc-website` → Settings → Environment variables) if contact/search/newsletter/chat APIs are needed. The careers listing and apply flow work without it.
+- S3 credentials: images are already linked to the Neon S3 bucket; keys are only required for uploading new assets.

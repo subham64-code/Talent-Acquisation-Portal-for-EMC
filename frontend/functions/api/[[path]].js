@@ -1,5 +1,16 @@
 const HR_API = 'https://talent-acquisation-portal-for-emc-production.up.railway.app/api/v1';
 
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-allow-headers': 'Content-Type',
+};
+
+const withCors = (headers = new Headers()) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
+  return headers;
+};
+
 const firstValue = (form, keys) => {
   for (const key of keys) {
     const value = form.get(key);
@@ -50,7 +61,7 @@ const safeResponseHeaders = (headers) => {
     const value = headers.get(key);
     if (value) out.set(key, value);
   }
-  return out;
+  return withCors(out);
 };
 
 const proxy = async (target, request) => {
@@ -71,13 +82,16 @@ const proxy = async (target, request) => {
   } catch (error) {
     return new Response(JSON.stringify({ error: 'Upstream API unavailable', detail: String(error) }), {
       status: 502,
-      headers: { 'content-type': 'application/json' },
+      headers: withCors(new Headers({ 'content-type': 'application/json' })),
     });
   }
 };
 
 export async function onRequest(context) {
   const { request, env } = context;
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: withCors() });
+  }
   const url = new URL(request.url);
   const parts = url.pathname.replace(/^\/api\//, '').split('/').filter(Boolean);
 
@@ -97,7 +111,7 @@ export async function onRequest(context) {
 
   if (parts[0] === 'visitor-counter') {
     return new Response(JSON.stringify({ count: 0 }), {
-      headers: { 'content-type': 'application/json' },
+      headers: withCors(new Headers({ 'content-type': 'application/json' })),
     });
   }
 
@@ -105,6 +119,6 @@ export async function onRequest(context) {
     error: 'This API route needs the Flask backend. Set FLASK_API_ORIGIN in Cloudflare Pages settings.',
   }), {
     status: 503,
-    headers: { 'content-type': 'application/json' },
+    headers: withCors(new Headers({ 'content-type': 'application/json' })),
   });
 }

@@ -1,3 +1,6 @@
+var EMC_API_BASE = window.EMC_API_BASE || (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' ? 'https://emc-website-7v6.pages.dev' : '');
+window.EMC_API_BASE = EMC_API_BASE;
+
 document.addEventListener('DOMContentLoaded', () => {
   const contactForm = document.getElementById('emcContactForm');
 
@@ -19,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const payload = { name, email, phone, organization, subject, message };
 
-      fetch('/api/contact', {
+      fetch(EMC_API_BASE + '/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

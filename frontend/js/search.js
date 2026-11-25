@@ -1,3 +1,6 @@
+var EMC_API_BASE = window.EMC_API_BASE || (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' ? 'https://emc-website-7v6.pages.dev' : '');
+window.EMC_API_BASE = EMC_API_BASE;
+
 document.addEventListener('DOMContentLoaded', () => {
   const searchBtn = document.querySelector('.nav-search-btn');
 
@@ -39,7 +42,7 @@ function openSearchModal() {
       return;
     }
 
-    fetch(`/api/search?q=${encodeURIComponent(query)}`)
+    fetch(`${EMC_API_BASE}/api/search?q=${encodeURIComponent(query)}`)
       .then(res => res.json())
       .then(data => {
         renderSearchResults(data, resultsContainer);

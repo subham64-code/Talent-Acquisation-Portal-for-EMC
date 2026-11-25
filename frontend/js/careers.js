@@ -1,5 +1,8 @@
+var EMC_API_BASE = window.EMC_API_BASE || (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost' ? 'https://emc-website-7v6.pages.dev' : '');
+window.EMC_API_BASE = EMC_API_BASE;
+
 const HR_EMAIL = 'info@ecometrix.co.in';
-const CAREER_API = '/api/career';
+const CAREER_API = EMC_API_BASE + '/api/career';
 
 function escapeHTML(str) {
   return String(str == null ? '' : str)
