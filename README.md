@@ -86,4 +86,5 @@ Then run `python backend/init_db.py` to seed NeonDB.
 - Credentials and links: copy `.env.example` to `.env` and fill in only the secrets you have. The deployed URLs and the CORS origin list are already filled in.
 - HR backend CORS: in the Railway HR service, set `CORS_ORIGINS` to the value from `.env.example`. Do not add `localhost` there; local Live Server is handled by the Pages proxy.
 - Flask-only routes: set `FLASK_API_ORIGIN` in Cloudflare Pages (`emc-website` → Settings → Environment variables) if contact/search/newsletter/chat APIs are needed. The careers listing and apply flow work without it.
-- S3 credentials: images are already linked to the Neon S3 bucket; keys are only required for uploading new assets.
+- S3 credentials: images are already linked to the Neon S3 bucket; keys are required for uploading new assets and for HR CV uploads.
+- If `/api/career/apply` returns **500**: the HR backend cannot store the CV. In Railway set `STORAGE_PROVIDER=s3`, `STORAGE_ALLOW_LOCAL=false`, `S3_FORCE_PATH_STYLE=true` and fill all `S3_*` values from `.env.example`. Temporary fallback: `STORAGE_ALLOW_LOCAL=true` writes CVs to the container filesystem and loses them on restart.
