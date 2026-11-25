@@ -81,10 +81,23 @@ Then run `python backend/init_db.py` to seed NeonDB.
 
 ## Deployed + local setup
 
-- Deployed website: `https://emc-website-7v6.pages.dev` (alias: `https://emc-website.emc-website-7v6.pages.dev`).
+### Current final state (verified 2026-11-25)
+
+- Backend: `https://talent-acquisation-portal-for-emc-production.up.railway.app` — health `200 {"status":"ok","service":"EMC Talent Acquisition Portal"}`; Brevo REST email working; storage fallback/local plus production S3 variables set; CORS cleaned; rate limiting removed.
+- Websites:
+  - Main: `https://emc-website-7v6.pages.dev` (alias: `https://emc-website.emc-website-7v6.pages.dev`)
+  - HR/Admin: `https://emc-hr-frontend.pages.dev`
+  - HR portal: `https://emc-talent-portal-bbd.pages.dev` (branch alias: `https://emc-new-website.emc-talent-portal-bbd.pages.dev`)
+  - Main App: `https://emc-one.subhambehera2023.workers.dev`
+- API base: `https://talent-acquisation-portal-for-emc-production.up.railway.app/api/v1`
+- Endpoint groups from that base: system, auth/hr, employee, career, submissions, users/access, master data, employees, candidates, openings, applications, AI, interviews, offers, documents, dashboard, reports, notifications, settings, files.
+- Career apply verified end-to-end through the Pages proxy: `POST /api/career/apply` → `201`, reference `EMC202611J22/A5` (dummy verification record).
+- Last completed actions: storage fallback saved/redeployed → health OK; production `PUBLIC_API_URL` and `BYPASS_AUTH` values saved/redeployed → health OK; rate limiting removed → build/test/deploy → health OK.
+
+### Local setup
+
 - Local Live Server: `http://127.0.0.1:5500/EMC%20New%20Website/EMC/frontend/about.html`. All pages use the same files, CSS, JS and images as the deployed site. When opened locally, API calls are sent to the deployed Pages API proxy, so UI, UX and functionality match the deployed site.
-- Credentials and links: copy `.env.example` to `.env` and fill in only the secrets you have. The deployed URLs and the CORS origin list are already filled in.
-- HR backend CORS: in the Railway HR service, set `CORS_ORIGINS` to the value from `.env.example`. Do not add `localhost` there; local Live Server is handled by the Pages proxy.
+- Credentials and links: copy `.env.example` to `.env` and fill in only the secrets you have. The deployed URLs and the cleaned CORS origin list are already filled in.
+- HR backend CORS: the Railway HR service uses the three cleaned origins from `.env.example`. Do not add `localhost` there; local Live Server is handled by the Pages proxy.
 - Flask-only routes: set `FLASK_API_ORIGIN` in Cloudflare Pages (`emc-website` → Settings → Environment variables) if contact/search/newsletter/chat APIs are needed. The careers listing and apply flow work without it.
-- S3 credentials: images are already linked to the Neon S3 bucket; keys are required for uploading new assets and for HR CV uploads.
-- If `/api/career/apply` returns **500**: the HR backend cannot store the CV. In Railway set `STORAGE_PROVIDER=s3`, `STORAGE_ALLOW_LOCAL=false`, `S3_FORCE_PATH_STYLE=true` and fill all `S3_*` values from `.env.example`. Temporary fallback: `STORAGE_ALLOW_LOCAL=true` writes CVs to the container filesystem and loses them on restart.
+- S3 credentials: images are already linked to the Neon S3 bucket; keys are required for uploading new assets and for HR CV uploads. Production has valid S3 credentials plus `STORAGE_ALLOW_LOCAL=true` as a fallback.
