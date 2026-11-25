@@ -318,6 +318,21 @@
     }
   }
 
-  function boot() { initReveal(); initGlobe(); }
+  function initEarthVideo() {
+    var video = document.getElementById('aboutEarthVideo');
+    if (!video) return;
+    var play = function () {
+      var result = video.play();
+      if (result && typeof result.catch === 'function') result.catch(function () {});
+    };
+    video.addEventListener('loadeddata', play, { once: true });
+    video.addEventListener('canplay', play, { once: true });
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) play();
+    });
+    play();
+  }
+
+  function boot() { initReveal(); initGlobe(); initEarthVideo(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
