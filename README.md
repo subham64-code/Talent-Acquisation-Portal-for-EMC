@@ -101,3 +101,4 @@ Then run `python backend/init_db.py` to seed NeonDB.
 - HR backend CORS: the Railway HR service uses the three cleaned origins from `.env.example`. Do not add `localhost` there; local Live Server is handled by the Pages proxy.
 - Flask-only routes: set `FLASK_API_ORIGIN` in Cloudflare Pages (`emc-website` → Settings → Environment variables) if contact/search/newsletter/chat APIs are needed. The careers listing and apply flow work without it.
 - S3 credentials: images are already linked to the Neon S3 bucket; keys are required for uploading new assets and for HR CV uploads. Production has valid S3 credentials plus `STORAGE_ALLOW_LOCAL=true` as a fallback.
+- Candidate confirmation email: set `BREVO_API_KEY` and `BREVO_SENDER_EMAIL` in Railway. The backend awaits the Brevo REST send and returns `data.emailStatus`; the website shows the application ID and email confirmation after apply.
