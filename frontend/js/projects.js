@@ -4,9 +4,9 @@ const PROJECTS_DATA = [
     title: "24x7 Drink from Tap Water Supply System",
     category: "Water Supply",
     location: "Bhubaneswar & Cuttack, Odisha",
-    image: "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80",
+    image: "https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/Water%20Supply%20website.webp",
     gallery: [
-      "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80",
+      "https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/Water%20Supply%20website.webp",
       "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80",
       "https://images.unsplash.com/photo-1444723121867-7a241cacace9?auto=format&fit=crop&w=800&q=80"
     ],
@@ -33,7 +33,7 @@ const PROJECTS_DATA = [
     image: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80",
     gallery: [
       "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80"
+      "https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/Water%20Supply%20website.webp"
     ],
     shortDesc: "Planning, design, procurement support and project management for a modern 100 MLD sewage treatment plant with treated water reuse.",
     client: "Cuttack Municipal Corporation (CMC)",
@@ -131,8 +131,8 @@ const PROJECTS_DATA = [
     title: "PMC for Urban Infrastructure Projects",
     category: "Project Management",
     location: "Odisha",
-    image: "https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80",
-    gallery: ["https://images.unsplash.com/photo-1541888946425-d0fbb186a5b7?auto=format&fit=crop&w=800&q=80"],
+    image: "https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/Water%20Supply%20website.webp",
+    gallery: ["https://br-small-darkness-bd4lki66.storage.c-8.us-east-2.aws.neon.tech/emc-bucket/frontend/assets/Water%20Supply%20website.webp"],
     shortDesc: "End-to-end project management consultancy for large-scale urban infrastructure packages.",
     client: "Urban Local Bodies",
     period: "2018 - Present",
