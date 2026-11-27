@@ -62,7 +62,7 @@ const SERVICES = [
         title: "Talent Acquisition Portal",
         desc: "Manage talent acquisition, recruitment and onboarding.",
         g: ["#62a8ff", "#2457c9"],
-        url: "https://emc-hr-frontend.pages.dev/auth/hr/login",
+        url: "https://talent-aquisition-swart.vercel.app/auth/hr/login",
         icon: (
             <Svg>
                 <circle cx="9" cy="8" r="3.5" />
